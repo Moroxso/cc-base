@@ -22,6 +22,21 @@ local operators = {
     "!="
 }
 
+local actionModes = {
+    {
+        value = "hold",
+        label = "Hold while true"
+    },
+    {
+        value = "pulse",
+        label = "Pulse for time"
+    },
+    {
+        value = "delay",
+        label = "Delay then hold"
+    }
+}
+
 local function resetColors()
     term.setBackgroundColor(colors.black)
     term.setTextColor(colors.white)
@@ -111,16 +126,17 @@ local function chooseFromList(title, items)
 
         for i, item in ipairs(items) do
             local y = 5 + i
+            local label = item.label or item
 
             if i == selected then
                 term.setBackgroundColor(colors.white)
                 term.setTextColor(colors.black)
                 term.setCursorPos(4, y)
-                term.write(" > " .. tostring(item) .. " ")
+                term.write(" > " .. tostring(label) .. " ")
                 resetColors()
             else
                 term.setCursorPos(6, y)
-                term.write(tostring(item))
+                term.write(tostring(label))
             end
         end
 
@@ -189,6 +205,71 @@ local function chooseLevel(title, initial)
     end
 end
 
+local function chooseSeconds(title, initial)
+    local value = initial or 5
+
+    while true do
+        clear()
+        drawHeader(title)
+
+        centerText(
+            8,
+            tostring(value) .. " seconds",
+            colors.cyan
+        )
+
+        centerText(
+            10,
+            "Range: 1 - 60 seconds",
+            colors.lightGray
+        )
+
+        drawFooter("LEFT/RIGHT  ENTER  SHIFT")
+
+        local _, key = os.pullEvent("key")
+
+        if key == keys.left then
+            value = math.max(1, value - 1)
+
+        elseif key == keys.right then
+            value = math.min(60, value + 1)
+
+        elseif key == keys.enter then
+            return value
+
+        elseif key == keys.leftShift then
+            return nil
+        end
+    end
+end
+
+local function makeRuleName(
+    inputSide,
+    operator,
+    threshold,
+    outputSide,
+    outputValue,
+    actionMode,
+    seconds
+)
+    local base = string.format(
+        "%s%s%d -> %s=%d",
+        inputSide:upper(),
+        operator,
+        threshold,
+        outputSide:upper(),
+        outputValue
+    )
+
+    if actionMode == "pulse" then
+        return base .. " PULSE " .. tostring(seconds) .. "s"
+    elseif actionMode == "delay" then
+        return base .. " AFTER " .. tostring(seconds) .. "s"
+    end
+
+    return base
+end
+
 local function addRule(config)
     local inputIndex = chooseFromList(
         "INPUT SIDE",
@@ -235,25 +316,61 @@ local function addRule(config)
         return
     end
 
+    local actionIndex = chooseFromList(
+        "ACTION MODE",
+        actionModes
+    )
+
+    if not actionIndex then
+        return
+    end
+
+    local actionMode = actionModes[actionIndex].value
+    local seconds = 1
+
+    if actionMode == "pulse" then
+        seconds = chooseSeconds(
+            "PULSE DURATION",
+            5
+        )
+
+        if not seconds then
+            return
+        end
+
+    elseif actionMode == "delay" then
+        seconds = chooseSeconds(
+            "DELAY",
+            3
+        )
+
+        if not seconds then
+            return
+        end
+    end
+
     local inputSide = sides[inputIndex]
     local operator = operators[operatorIndex]
     local outputSide = sides[outputIndex]
 
     local rule = {
-        name = string.format(
-            "%s%s%d -> %s=%d",
-            inputSide:upper(),
+        name = makeRuleName(
+            inputSide,
             operator,
             threshold,
-            outputSide:upper(),
-            outputValue
+            outputSide,
+            outputValue,
+            actionMode,
+            seconds
         ),
         enabled = true,
         inputSide = inputSide,
         operator = operator,
         threshold = threshold,
         outputSide = outputSide,
-        outputValue = outputValue
+        outputValue = outputValue,
+        actionMode = actionMode,
+        seconds = seconds
     }
 
     table.insert(config.rules, rule)
@@ -460,10 +577,10 @@ local function drawMain(config, selected)
 
     term.setCursorPos(3, 15)
     term.setTextColor(colors.lightGray)
-    term.write("Conditions: >=  >  <=  <  ==  !=")
+    term.write("Actions: HOLD / PULSE / DELAY")
 
     term.setCursorPos(3, 16)
-    term.write("Matching rules use highest output.")
+    term.write("Pulse triggers on condition edge.")
 
     resetColors()
     drawFooter("UP/DOWN  ENTER  SHIFT")
