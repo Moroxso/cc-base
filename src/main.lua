@@ -2,11 +2,13 @@ local ui = require("lib.ui")
 local Runtime = require("lib.runtime")
 local Automation = require("lib.automation")
 local Screen = require("lib.gui.screen")
+local NetworkService = require("lib.net.service")
 
 local APP_TITLE = "BASE CONTROL SYSTEM"
 local AUTOMATION_PATH = "/data/automation.json"
 
 local automation = Automation.new(AUTOMATION_PATH)
+local network = NetworkService.new()
 
 local function waitForBack()
     while true do
@@ -96,6 +98,16 @@ local function showStatus()
         (config.enabled and "ON" or "OFF") ..
         " (" .. #config.rules .. " rules)"
     )
+
+    term.setCursorPos(4, 15)
+
+    if rednet and rednet.isOpen and rednet.isOpen() then
+        term.setTextColor(colors.lime)
+        term.write("Network: REDNET OPEN")
+    else
+        term.setTextColor(colors.orange)
+        term.write("Network: NO OPEN MODEM")
+    end
 
     ui.resetColors(term)
     ui.drawFooter("LEFT / SHIFT - Back")
@@ -350,6 +362,7 @@ local function createDashboardScreen()
     add("automation", "Automation", 1, 3, colors.orange, colors.black)
     add("reboot", "Reboot", 2, 3, colors.brown)
     add("shutdown", "Shutdown", 1, 4, colors.red)
+    add("network", "Network", 2, 4, colors.blue)
 
     return screen
 end
@@ -408,6 +421,11 @@ local function activateDashboardAction(action)
             "Automation",
             "/apps/automation.lua"
         )
+    elseif action == "network" then
+        runProgram(
+            "Network Control",
+            "/apps/network.lua"
+        )
     elseif action == "reboot" then
         rebootComputer()
     elseif action == "shutdown" then
@@ -452,5 +470,8 @@ parallel.waitForAny(
     mainLoop,
     function()
         automation:run()
+    end,
+    function()
+        network:run()
     end
 )
