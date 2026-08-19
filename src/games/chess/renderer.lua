@@ -13,8 +13,9 @@ function Renderer.new(target)
 
     self.target = target or term
     self.boardX = 2
-    self.boardY = 5
+    self.boardY = 3
     self.cellWidth = 4
+    self.cellHeight = 2
     self.panelX = 36
 
     return self
@@ -40,18 +41,15 @@ end
 
 function Renderer:drawHeader()
     local width = self.target.getSize()
+    local text = "CHESS PVP"
 
     self.target.setBackgroundColor(colors.purple)
     self.target.setTextColor(colors.white)
+    self.target.setCursorPos(1, 1)
+    self.target.write(string.rep(" ", width))
 
-    for y = 1, 3 do
-        self.target.setCursorPos(1, y)
-        self.target.write(string.rep(" ", width))
-    end
-
-    local text = "CHESS - PLAYER VS PLAYER"
     local x = math.max(1, math.floor((width - #text) / 2) + 1)
-    self.target.setCursorPos(x, 2)
+    self.target.setCursorPos(x, 1)
     self.target.write(text)
     self:resetColors()
 end
@@ -91,47 +89,58 @@ function Renderer:getSquareBackground(game, x, y)
     return background
 end
 
+function Renderer:drawPiece(screenX, screenY, piece, background)
+    local sprite = Pieces.sprite(piece)
+    local foreground = piece.color == Pieces.WHITE and colors.white or colors.black
+
+    for row = 1, self.cellHeight do
+        self.target.setBackgroundColor(background)
+        self.target.setTextColor(foreground)
+        self.target.setCursorPos(screenX, screenY + row - 1)
+        self.target.write(sprite[row] or string.rep(" ", self.cellWidth))
+    end
+end
+
 function Renderer:drawBoard(game)
     for x = 1, 8 do
         local screenX = self.boardX + (x - 1) * self.cellWidth
         self:write(
             screenX + 1,
-            self.boardY - 1,
+            2,
             fileNames[x],
             colors.lightGray
         )
     end
 
     for y = 1, 8 do
+        local screenY = self.boardY + (y - 1) * self.cellHeight
+
         self:write(
             1,
-            self.boardY + y - 1,
+            screenY,
             tostring(9 - y),
             colors.lightGray
         )
 
         for x = 1, 8 do
             local screenX = self.boardX + (x - 1) * self.cellWidth
-            local screenY = self.boardY + y - 1
             local background = self:getSquareBackground(game, x, y)
             local piece = game.board:get(x, y)
 
-            self.target.setBackgroundColor(background)
-            self.target.setTextColor(colors.black)
-            self.target.setCursorPos(screenX, screenY)
-            self.target.write(string.rep(" ", self.cellWidth))
+            for row = 0, self.cellHeight - 1 do
+                self.target.setBackgroundColor(background)
+                self.target.setTextColor(colors.black)
+                self.target.setCursorPos(screenX, screenY + row)
+                self.target.write(string.rep(" ", self.cellWidth))
+            end
 
             if piece then
-                local foreground = piece.color == Pieces.WHITE and
-                    colors.white or colors.black
-
-                self.target.setTextColor(foreground)
-                self.target.setCursorPos(screenX + 1, screenY)
-                self.target.write(Pieces.symbol(piece))
+                self:drawPiece(screenX, screenY, piece, background)
             elseif game:isLegalDestination(x, y) then
+                self.target.setBackgroundColor(background)
                 self.target.setTextColor(colors.black)
                 self.target.setCursorPos(screenX + 1, screenY)
-                self.target.write("*")
+                self.target.write("**")
             end
         end
     end
@@ -143,22 +152,22 @@ function Renderer:drawPanel(game)
     local x = self.panelX
     local turn = game:getTurn():upper()
 
-    self:write(x, 5, "TURN: " .. turn, colors.cyan)
+    self:write(x, 3, "TURN: " .. turn, colors.cyan)
 
     if game.status == "checkmate" then
-        self:write(x, 7, "CHECKMATE", colors.red)
+        self:write(x, 5, "CHECKMATE", colors.red)
         self:write(
             x,
-            8,
+            6,
             "WIN: " .. tostring(game.winner):upper(),
             colors.yellow
         )
     elseif game.status == "stalemate" then
-        self:write(x, 7, "STALEMATE", colors.yellow)
+        self:write(x, 5, "STALEMATE", colors.yellow)
     elseif game.inCheck then
-        self:write(x, 7, "CHECK", colors.red)
+        self:write(x, 5, "CHECK", colors.red)
     else
-        self:write(x, 7, "STATUS: PLAY", colors.lime)
+        self:write(x, 5, "STATUS: PLAY", colors.lime)
     end
 
     local selected = "-"
@@ -167,7 +176,7 @@ function Renderer:drawPanel(game)
         selected = Move.squareName(game.selectedX, game.selectedY)
     end
 
-    self:write(x, 9, "Selected: " .. selected, colors.white)
+    self:write(x, 7, "Selected: " .. selected, colors.white)
 
     local last = Move.toText(game.lastMove)
 
@@ -175,12 +184,12 @@ function Renderer:drawPanel(game)
         last = last:gsub("=%?", "=" .. game.lastPromotion:sub(1, 1):upper())
     end
 
-    self:write(x, 10, "Last: " .. last, colors.lightGray)
+    self:write(x, 8, "Last: " .. last, colors.lightGray)
 
     if game.status ~= "playing" then
         self:write(x, 12, "ENTER = new game", colors.lightGray)
     elseif not game.promotionPending then
-        self:write(x, 12, "Click piece/cell", colors.lightGray)
+        self:write(x, 12, "Click piece -> move", colors.lightGray)
     end
 end
 
@@ -216,7 +225,7 @@ function Renderer:drawFooter()
 end
 
 function Renderer:screenToSquare(x, y)
-    if y < self.boardY or y >= self.boardY + 8 then
+    if y < self.boardY or y >= self.boardY + 8 * self.cellHeight then
         return nil, nil
     end
 
@@ -225,7 +234,7 @@ function Renderer:screenToSquare(x, y)
     end
 
     local boardX = math.floor((x - self.boardX) / self.cellWidth) + 1
-    local boardY = y - self.boardY + 1
+    local boardY = math.floor((y - self.boardY) / self.cellHeight) + 1
 
     return boardX, boardY
 end
