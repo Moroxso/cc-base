@@ -5,13 +5,100 @@ local Renderer = require("breakout.renderer")
 
 local monitor = peripheral.find("monitor")
 
-if not monitor then
-    error("Monitor not found")
+local function resetTerminal()
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(colors.white)
+    term.clear()
+    term.setCursorPos(1, 1)
 end
 
-monitor.setTextScale(0.5)
+local function chooseDisplay()
+    if not monitor then
+        return term, false
+    end
 
-local width, height = monitor.getSize()
+    local options = {
+        "Computer",
+        "Monitor"
+    }
+
+    local selected = 1
+
+    while true do
+        resetTerminal()
+
+        print("BREAKOUT v4")
+        print("")
+        print("Select display:")
+        print("")
+
+        for i, name in ipairs(options) do
+            if i == selected then
+                term.setBackgroundColor(colors.white)
+                term.setTextColor(colors.black)
+                print(" > " .. name .. " ")
+                term.setBackgroundColor(colors.black)
+                term.setTextColor(colors.white)
+            else
+                print("   " .. name)
+            end
+        end
+
+        print("")
+        print("UP/DOWN - select")
+        print("ENTER   - start")
+        print("SHIFT   - cancel")
+
+        local _, key = os.pullEvent("key")
+
+        if key == keys.up then
+            selected = selected - 1
+
+            if selected < 1 then
+                selected = #options
+            end
+
+        elseif key == keys.down then
+            selected = selected + 1
+
+            if selected > #options then
+                selected = 1
+            end
+
+        elseif key == keys.enter then
+            if selected == 1 then
+                return term, false
+            end
+
+            return monitor, true
+
+        elseif key == keys.leftShift then
+            return nil, false
+        end
+    end
+end
+
+local display, usingMonitor = chooseDisplay()
+
+if not display then
+    resetTerminal()
+    print("Breakout cancelled.")
+    return
+end
+
+if usingMonitor then
+    monitor.setTextScale(0.5)
+end
+
+local width, height = display.getSize()
+
+if width < 20 or height < 12 then
+    resetTerminal()
+    error(
+        "Display is too small: " ..
+        width .. "x" .. height
+    )
+end
 
 local tick = 0.10
 local running = true
@@ -50,7 +137,7 @@ local bricks = Bricks.new(
     4
 )
 
-local renderer = Renderer.new(monitor)
+local renderer = Renderer.new(display)
 
 local function resetBall()
     ball:reset(
@@ -156,7 +243,8 @@ local function inputLoop()
                 running = false
                 return
             end
-        elseif event == "monitor_touch" then
+
+        elseif usingMonitor and event == "monitor_touch" then
             local touchX = b
 
             if touchX < width / 2 then
@@ -168,17 +256,29 @@ local function inputLoop()
     end
 end
 
-term.clear()
-term.setCursorPos(1, 1)
+resetTerminal()
 
-print("BREAKOUT v3")
-print("")
-print("LEFT / RIGHT - move")
-print("ENTER        - pause")
-print("LEFT SHIFT   - exit")
-print("")
-print("Monitor touch:")
-print("left/right half")
+if usingMonitor then
+    print("BREAKOUT v4")
+    print("")
+    print("Display: MONITOR")
+    print("")
+    print("LEFT / RIGHT - move")
+    print("ENTER        - pause")
+    print("LEFT SHIFT   - exit")
+    print("")
+    print("Monitor touch:")
+    print("left/right half")
+else
+    print("BREAKOUT v4")
+    print("")
+    print("Display: COMPUTER")
+    print("")
+    print("LEFT / RIGHT - move")
+    print("ENTER        - pause")
+    print("LEFT SHIFT   - exit")
+    sleep(1.5)
+end
 
 renderer:draw(
     score,
@@ -202,8 +302,6 @@ end
 
 renderer:clear()
 
-term.clear()
-term.setCursorPos(1, 1)
-
+resetTerminal()
 print("Breakout closed.")
 print("Score: " .. score)
