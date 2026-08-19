@@ -21,11 +21,24 @@ function Game.new(width, height)
     self.gameOver = false
     self.paused = false
     self.current = nil
-    self.nextKind = Pieces.randomKind()
+    self.bag = {}
+    self.nextKind = self:drawKind()
 
     self:spawnPiece()
 
     return self
+end
+
+function Game:refillBag()
+    self.bag = Pieces.createBag()
+end
+
+function Game:drawKind()
+    if #self.bag == 0 then
+        self:refillBag()
+    end
+
+    return table.remove(self.bag, 1)
 end
 
 function Game:getDropInterval()
@@ -33,8 +46,8 @@ function Game:getDropInterval()
 end
 
 function Game:spawnPiece()
-    local kind = self.nextKind or Pieces.randomKind()
-    self.nextKind = Pieces.randomKind()
+    local kind = self.nextKind or self:drawKind()
+    self.nextKind = self:drawKind()
 
     self.current = {
         kind = kind,
@@ -69,6 +82,24 @@ function Game:canPlaceCurrent(x, y, rotation)
         x or self.current.x,
         y or self.current.y
     )
+end
+
+function Game:getGhostY()
+    if not self.current or self.gameOver then
+        return nil
+    end
+
+    local ghostY = self.current.y
+
+    while self:canPlaceCurrent(
+        self.current.x,
+        ghostY + 1,
+        self.current.rotation
+    ) do
+        ghostY = ghostY + 1
+    end
+
+    return ghostY
 end
 
 function Game:move(dx, dy)
@@ -195,7 +226,8 @@ function Game:restart()
     self.gameOver = false
     self.paused = false
     self.current = nil
-    self.nextKind = Pieces.randomKind()
+    self.bag = {}
+    self.nextKind = self:drawKind()
     self:spawnPiece()
 end
 
