@@ -2,6 +2,7 @@ local Address = require("lib.net.address")
 local CCIP = require("lib.net.ccip")
 local Protocol = require("lib.net.protocol")
 local Routes = require("lib.net.routes")
+local Firewall = require("lib.net.firewall")
 
 local IPService = {}
 IPService.__index = IPService
@@ -30,6 +31,7 @@ function IPService.new(options)
     self.address = Address.localAddress()
     self.routesPath = options.routesPath or Routes.DEFAULT_PATH
     self.routes = Routes.load(self.routesPath)
+    self.firewall = Firewall.new(options.firewallPath)
     self.pending = {}
     self.seenPackets = {}
     self.seenOrder = {}
@@ -95,6 +97,30 @@ function IPService:isValidPreviousHop(source, sender)
     local route = self:resolve(source)
 
     return route ~= nil and route.peerId == sender
+end
+
+function IPService:firewallAllows(chain, packet)
+    local allowed, reason = self.firewall:evaluate(chain, packet)
+
+    if allowed then
+        return true
+    end
+
+    self.droppedPackets = self.droppedPackets + 1
+    self.lastError = tostring(reason or "firewall_drop")
+
+    os.queueEvent(
+        "ccbase_firewall_drop",
+        chain,
+        self.lastError,
+        packet.source,
+        packet.destination,
+        packet.protocol,
+        packet.destinationPort,
+        packet.packetId
+    )
+
+    return false, self.lastError
 end
 
 function IPService:queueSecurePacket(peerId, ipPacket, context)
@@ -217,6 +243,15 @@ function IPService:send(destination, protocolId, sourcePort, destinationPort, pa
         return false, packetError
     end
 
+    local allowed, firewallError = self:firewallAllows(
+        Firewall.CHAIN_OUTPUT,
+        packet
+    )
+
+    if not allowed then
+        return false, firewallError
+    end
+
     self:rememberPacket(packet.packetId)
 
     return self:routePacket(
@@ -245,6 +280,15 @@ function IPService:sendControl(destination, payload, context)
 
     if not packet then
         return false, packetError
+    end
+
+    local allowed, firewallError = self:firewallAllows(
+        Firewall.CHAIN_OUTPUT,
+        packet
+    )
+
+    if not allowed then
+        return false, firewallError
     end
 
     self:rememberPacket(packet.packetId)
@@ -361,7 +405,25 @@ function IPService:handleIncoming(sender, serviceName, messageType, payload, tru
     end
 
     if payload.destination == self.address then
+        local allowed, firewallError = self:firewallAllows(
+            Firewall.CHAIN_INPUT,
+            payload
+        )
+
+        if not allowed then
+            return false, firewallError
+        end
+
         return self:deliverLocal(payload, sender)
+    end
+
+    local allowed, firewallError = self:firewallAllows(
+        Firewall.CHAIN_FORWARD,
+        payload
+    )
+
+    if not allowed then
+        return false, firewallError
     end
 
     local ok, forwardError = self:routePacket(
@@ -544,6 +606,14 @@ function IPService:run()
         elseif event == "ccbase_routes_reload" then
             self.routes = Routes.load(self.routesPath)
             os.queueEvent("ccbase_routes_changed")
+
+        elseif event == "ccbase_firewall_reload" then
+            self.firewall:reload()
+            os.queueEvent("ccbase_firewall_changed")
+
+        elseif event == "ccbase_firewall_reset_stats" then
+            self.firewall:resetStats()
+            os.queueEvent("ccbase_firewall_changed")
         end
     end
 end
