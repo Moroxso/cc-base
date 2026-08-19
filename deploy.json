@@ -1,5 +1,5 @@
 {
-  "version": "0.5.0",
+  "version": "0.6.0",
   "files": [
     {
       "source": "src/startup.lua",
@@ -16,6 +16,10 @@
     {
       "source": "src/lib/ui.lua",
       "target": "lib/ui.lua"
+    },
+    {
+      "source": "src/apps/redstone.lua",
+      "target": "apps/redstone.lua"
     },
     {
       "source": "src/games/breakout.lua",
