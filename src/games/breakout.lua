@@ -1,3 +1,8 @@
+local Ball = require("breakout.ball")
+local Paddle = require("breakout.paddle")
+local Bricks = require("breakout.bricks")
+local Renderer = require("breakout.renderer")
+
 local monitor = peripheral.find("monitor")
 
 if not monitor then
@@ -8,22 +13,12 @@ monitor.setTextScale(0.5)
 
 local width, height = monitor.getSize()
 
--- =========================
--- GAME SETTINGS
--- =========================
-
 local tick = 0.10
-
 local running = true
 local paused = false
 local result = nil
-
 local score = 0
 local lives = 3
-
--- =========================
--- PADDLE
--- =========================
 
 local paddleWidth = math.max(
     7,
@@ -31,346 +26,85 @@ local paddleWidth = math.max(
 )
 
 local paddleY = height - 1
-
 local paddleX = math.floor(
     (width - paddleWidth) / 2
 )
 
--- =========================
--- BALL
--- =========================
+local paddle = Paddle.new(
+    paddleX,
+    paddleY,
+    paddleWidth,
+    width
+)
 
-local ballX = math.floor(width / 2)
-local ballY = paddleY - 2
+local ball = Ball.new(
+    math.floor(width / 2),
+    paddleY - 2,
+    1,
+    -1
+)
 
-local ballDX = 1
-local ballDY = -1
+local bricks = Bricks.new(
+    width,
+    height,
+    4
+)
 
--- =========================
--- BRICKS
--- =========================
-
-local bricks = {}
-
-local brickWidth = 4
-local brickRows = math.min(4, height - 8)
-
-local bricksLeft = 0
-
--- =========================
--- HELPERS
--- =========================
-
-local function clamp(value, minValue, maxValue)
-    if value < minValue then
-        return minValue
-    end
-
-    if value > maxValue then
-        return maxValue
-    end
-
-    return value
-end
-
-local function centerText(y, text, color)
-    monitor.setTextColor(color or colors.white)
-
-    local x = math.floor(
-        (width - #text) / 2
-    ) + 1
-
-    monitor.setCursorPos(x, y)
-    monitor.write(text)
-end
-
--- =========================
--- BRICKS
--- =========================
-
-local brickColors = {
-    colors.red,
-    colors.orange,
-    colors.yellow,
-    colors.lime
-}
-
-local function createBricks()
-    bricks = {}
-    bricksLeft = 0
-
-    local startY = 3
-
-    for row = 1, brickRows do
-        local y = startY + row - 1
-
-        local x = 2
-
-        while x + brickWidth - 1 < width do
-            table.insert(
-                bricks,
-                {
-                    x = x,
-                    y = y,
-                    width = brickWidth - 1,
-                    alive = true,
-                    color =
-                        brickColors[
-                            ((row - 1) % #brickColors) + 1
-                        ]
-                }
-            )
-
-            bricksLeft = bricksLeft + 1
-
-            x = x + brickWidth
-        end
-    end
-end
-
--- =========================
--- BALL RESET
--- =========================
+local renderer = Renderer.new(monitor)
 
 local function resetBall()
-    ballX = math.floor(width / 2)
-    ballY = paddleY - 2
-
-    ballDX = 1
-    ballDY = -1
-end
-
--- =========================
--- PADDLE MOVEMENT
--- =========================
-
-local function movePaddle(amount)
-    paddleX = paddleX + amount
-
-    paddleX = clamp(
-        paddleX,
-        2,
-        width - paddleWidth
+    ball:reset(
+        math.floor(width / 2),
+        paddleY - 2,
+        1,
+        -1
     )
 end
-
--- =========================
--- BRICK COLLISION
--- =========================
-
-local function getBrickAt(x, y)
-    for _, brick in ipairs(bricks) do
-        if brick.alive then
-            if
-                y == brick.y
-                and x >= brick.x
-                and x < brick.x + brick.width
-            then
-                return brick
-            end
-        end
-    end
-
-    return nil
-end
-
--- =========================
--- DRAWING
--- =========================
-
-local function drawHUD()
-    monitor.setTextColor(colors.yellow)
-
-    monitor.setCursorPos(2, 1)
-
-    monitor.write(
-        "SCORE: " ..
-        tostring(score)
-    )
-
-    local livesText =
-        "LIVES: " ..
-        tostring(lives)
-
-    monitor.setCursorPos(
-        width - #livesText,
-        1
-    )
-
-    monitor.write(livesText)
-end
-
-local function drawBricks()
-    for _, brick in ipairs(bricks) do
-        if brick.alive then
-            monitor.setTextColor(
-                brick.color
-            )
-
-            monitor.setCursorPos(
-                brick.x,
-                brick.y
-            )
-
-            monitor.write(
-                string.rep(
-                    "#",
-                    brick.width
-                )
-            )
-        end
-    end
-end
-
-local function drawPaddle()
-    monitor.setTextColor(colors.lime)
-
-    monitor.setCursorPos(
-        paddleX,
-        paddleY
-    )
-
-    monitor.write(
-        string.rep(
-            "=",
-            paddleWidth
-        )
-    )
-end
-
-local function drawBall()
-    monitor.setTextColor(colors.white)
-
-    monitor.setCursorPos(
-        ballX,
-        ballY
-    )
-
-    monitor.write("O")
-end
-
-local function drawPause()
-    if paused then
-        centerText(
-            math.floor(height / 2),
-            "PAUSED",
-            colors.yellow
-        )
-    end
-end
-
-local function draw()
-    monitor.setBackgroundColor(colors.black)
-    monitor.setTextColor(colors.white)
-
-    monitor.clear()
-
-    drawHUD()
-    drawBricks()
-    drawPaddle()
-    drawBall()
-    drawPause()
-end
-
--- =========================
--- BALL PHYSICS
--- =========================
 
 local function moveBall()
-    local nextX =
-        ballX + ballDX
-
-    local nextY =
-        ballY + ballDY
-
-    -- LEFT WALL
+    local nextX, nextY = ball:nextPosition()
 
     if nextX <= 1 then
-        ballDX = 1
-        nextX = ballX + ballDX
+        ball:setDX(1)
+        nextX, nextY = ball:nextPosition()
+    elseif nextX >= width then
+        ball:setDX(-1)
+        nextX, nextY = ball:nextPosition()
     end
-
-    -- RIGHT WALL
-
-    if nextX >= width then
-        ballDX = -1
-        nextX = ballX + ballDX
-    end
-
-    -- TOP WALL
 
     if nextY <= 2 then
-        ballDY = 1
-        nextY = ballY + ballDY
+        ball:setDY(1)
+        nextX, nextY = ball:nextPosition()
     end
 
-    -- BRICK COLLISION
+    if bricks:hitAt(nextX, nextY) then
+        score = score + 10
+        ball:bounceY()
+        nextX, nextY = ball:nextPosition()
 
-    local brick =
-        getBrickAt(
-            nextX,
-            nextY
-        )
-
-    if brick then
-        brick.alive = false
-
-        bricksLeft =
-            bricksLeft - 1
-
-        score =
-            score + 10
-
-        ballDY =
-            -ballDY
-
-        nextY =
-            ballY + ballDY
-
-        if bricksLeft <= 0 then
+        if bricks:isEmpty() then
             result = "win"
             running = false
             return
         end
     end
 
-    -- PADDLE COLLISION
+    if ball.dy > 0 and nextY >= paddle.y then
+        if paddle:contains(nextX) then
+            ball:setDY(-1)
 
-    if
-        ballDY > 0
-        and nextY >= paddleY
-    then
-        if
-            nextX >= paddleX
-            and nextX <
-                paddleX + paddleWidth
-        then
+            local paddleCenter = paddle:center()
 
-            ballDY = -1
-
-            local paddleCenter =
-                paddleX +
-                paddleWidth / 2
-
-            if nextX <
-                paddleCenter - 1
-            then
-                ballDX = -1
-
-            elseif nextX >
-                paddleCenter + 1
-            then
-                ballDX = 1
+            if nextX < paddleCenter - 1 then
+                ball:setDX(-1)
+            elseif nextX > paddleCenter + 1 then
+                ball:setDX(1)
             end
 
-            nextY =
-                paddleY - 1
-
+            nextX = ball.x + ball.dx
+            nextY = paddle.y - 1
         else
-            -- BALL MISSED
-
-            lives =
-                lives - 1
+            lives = lives - 1
 
             if lives <= 0 then
                 result = "lose"
@@ -379,20 +113,13 @@ local function moveBall()
             end
 
             resetBall()
-
             sleep(0.5)
-
             return
         end
     end
 
-    ballX = nextX
-    ballY = nextY
+    ball:setPosition(nextX, nextY)
 end
-
--- =========================
--- GAME LOOP
--- =========================
 
 local function gameLoop()
     while running do
@@ -400,59 +127,51 @@ local function gameLoop()
             moveBall()
         end
 
-        draw()
+        renderer:draw(
+            score,
+            lives,
+            paused,
+            ball,
+            paddle,
+            bricks
+        )
 
         sleep(tick)
     end
 end
 
--- =========================
--- INPUT LOOP
--- =========================
-
 local function inputLoop()
     while running do
-        local event, a, b, c =
-            os.pullEvent()
+        local event, a, b = os.pullEvent()
 
         if event == "key" then
-
             if a == keys.left then
-                movePaddle(-3)
-
+                paddle:move(-3)
             elseif a == keys.right then
-                movePaddle(3)
-
+                paddle:move(3)
             elseif a == keys.enter then
                 paused = not paused
-
             elseif a == keys.leftShift then
                 result = "exit"
                 running = false
                 return
             end
-
         elseif event == "monitor_touch" then
-
             local touchX = b
 
             if touchX < width / 2 then
-                movePaddle(-3)
+                paddle:move(-3)
             else
-                movePaddle(3)
+                paddle:move(3)
             end
         end
     end
 end
 
--- =========================
--- START SCREEN
--- =========================
-
 term.clear()
 term.setCursorPos(1, 1)
 
-print("BREAKOUT v2")
+print("BREAKOUT v3")
 print("")
 print("LEFT / RIGHT - move")
 print("ENTER        - pause")
@@ -461,60 +180,27 @@ print("")
 print("Monitor touch:")
 print("left/right half")
 
-createBricks()
-resetBall()
-draw()
-
--- =========================
--- RUN
--- =========================
+renderer:draw(
+    score,
+    lives,
+    paused,
+    ball,
+    paddle,
+    bricks
+)
 
 parallel.waitForAny(
     gameLoop,
     inputLoop
 )
 
--- =========================
--- END SCREEN
--- =========================
+renderer:showResult(result, score)
 
-monitor.setBackgroundColor(colors.black)
-monitor.clear()
-
-if result == "win" then
-    centerText(
-        math.floor(height / 2),
-        "YOU WIN!",
-        colors.lime
-    )
-
-    centerText(
-        math.floor(height / 2) + 2,
-        "SCORE: " .. score,
-        colors.white
-    )
-
-    sleep(3)
-
-elseif result == "lose" then
-    centerText(
-        math.floor(height / 2),
-        "GAME OVER",
-        colors.red
-    )
-
-    centerText(
-        math.floor(height / 2) + 2,
-        "SCORE: " .. score,
-        colors.white
-    )
-
+if result == "win" or result == "lose" then
     sleep(3)
 end
 
-monitor.setBackgroundColor(colors.black)
-monitor.setTextColor(colors.white)
-monitor.clear()
+renderer:clear()
 
 term.clear()
 term.setCursorPos(1, 1)
