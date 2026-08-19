@@ -376,7 +376,7 @@ while running do
         redraw = true
 
     elseif event == "ccbase_net_ping_started" then
-        if c then
+        if b then
             message = "Ping sent to #" .. tostring(a)
         else
             message = "Ping failed for #" .. tostring(a)
