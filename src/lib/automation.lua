@@ -2,7 +2,7 @@ local Automation = {}
 Automation.__index = Automation
 
 local DEFAULT_PATH = "/data/automation.json"
-local CONFIG_VERSION = 2
+local CONFIG_VERSION = 3
 
 local VALID_SIDES = {
     left = true,
@@ -20,6 +20,12 @@ local VALID_OPERATORS = {
     ["<"] = true,
     ["=="] = true,
     ["!="] = true
+}
+
+local VALID_ACTION_MODES = {
+    hold = true,
+    pulse = true,
+    delay = true
 }
 
 local function copyDefault()
@@ -51,6 +57,18 @@ local function clampLevel(value)
     return value
 end
 
+local function clampSeconds(value)
+    value = tonumber(value) or 1
+
+    if value < 0.1 then
+        return 0.1
+    elseif value > 300 then
+        return 300
+    end
+
+    return value
+end
+
 local function normalizeOperator(value)
     value = tostring(value or ">=")
 
@@ -59,6 +77,16 @@ local function normalizeOperator(value)
     end
 
     return ">="
+end
+
+local function normalizeActionMode(value)
+    value = tostring(value or "hold")
+
+    if VALID_ACTION_MODES[value] then
+        return value
+    end
+
+    return "hold"
 end
 
 local function compare(input, operator, threshold)
@@ -95,6 +123,8 @@ local function normalizeRule(rule, index)
     local threshold = clampLevel(rule.threshold)
     local outputValue = clampLevel(rule.outputValue)
     local operator = normalizeOperator(rule.operator)
+    local actionMode = normalizeActionMode(rule.actionMode)
+    local seconds = clampSeconds(rule.seconds)
 
     return {
         name = tostring(
@@ -106,8 +136,24 @@ local function normalizeRule(rule, index)
         operator = operator,
         threshold = threshold,
         outputSide = rule.outputSide,
-        outputValue = outputValue
+        outputValue = outputValue,
+        actionMode = actionMode,
+        seconds = seconds
     }
+end
+
+local function makeRuleKey(rule, index)
+    return table.concat({
+        tostring(index),
+        rule.name,
+        rule.inputSide,
+        rule.operator,
+        tostring(rule.threshold),
+        rule.outputSide,
+        tostring(rule.outputValue),
+        rule.actionMode,
+        tostring(rule.seconds)
+    }, "|")
 end
 
 function Automation.loadConfig(path)
@@ -185,6 +231,7 @@ function Automation.new(path)
     self.path = path or DEFAULT_PATH
     self.config = Automation.loadConfig(self.path)
     self.controlledSides = {}
+    self.ruleStates = {}
     self.running = false
 
     return self
@@ -208,9 +255,11 @@ end
 
 function Automation:evaluate()
     local desired = {}
+    local activeStateKeys = {}
+    local now = os.clock()
 
     if self.config.enabled then
-        for _, rule in ipairs(self.config.rules) do
+        for index, rule in ipairs(self.config.rules) do
             if rule.enabled then
                 desired[rule.outputSide] =
                     desired[rule.outputSide] or 0
@@ -219,17 +268,74 @@ function Automation:evaluate()
                     rule.inputSide
                 )
 
-                if compare(
+                local matched = compare(
                     input,
                     rule.operator,
                     rule.threshold
-                ) then
+                )
+
+                local stateKey = makeRuleKey(rule, index)
+                activeStateKeys[stateKey] = true
+
+                local state = self.ruleStates[stateKey]
+
+                if not state then
+                    state = {
+                        lastMatched = false,
+                        delayStartedAt = nil,
+                        pulseUntil = nil
+                    }
+                    self.ruleStates[stateKey] = state
+                end
+
+                local shouldOutput = false
+
+                if rule.actionMode == "hold" then
+                    shouldOutput = matched
+
+                elseif rule.actionMode == "delay" then
+                    if matched then
+                        if not state.delayStartedAt then
+                            state.delayStartedAt = now
+                        end
+
+                        shouldOutput =
+                            (now - state.delayStartedAt) >= rule.seconds
+                    else
+                        state.delayStartedAt = nil
+                    end
+
+                elseif rule.actionMode == "pulse" then
+                    if matched and not state.lastMatched then
+                        state.pulseUntil = now + rule.seconds
+                    end
+
+                    if state.pulseUntil then
+                        if now < state.pulseUntil then
+                            shouldOutput = true
+                        else
+                            state.pulseUntil = nil
+                        end
+                    end
+                end
+
+                state.lastMatched = matched
+
+                if shouldOutput then
                     desired[rule.outputSide] = math.max(
                         desired[rule.outputSide],
                         rule.outputValue
                     )
                 end
             end
+        end
+    else
+        self.ruleStates = {}
+    end
+
+    for stateKey in pairs(self.ruleStates) do
+        if not activeStateKeys[stateKey] then
+            self.ruleStates[stateKey] = nil
         end
     end
 
@@ -257,7 +363,7 @@ function Automation:run()
     self:reload()
     self:evaluate()
 
-    local timer = os.startTimer(0.5)
+    local timer = os.startTimer(0.1)
 
     while self.running do
         local event, value = os.pullEvent()
@@ -272,7 +378,7 @@ function Automation:run()
         elseif event == "timer" and value == timer then
             self:reload()
             self:evaluate()
-            timer = os.startTimer(0.5)
+            timer = os.startTimer(0.1)
         end
     end
 end
