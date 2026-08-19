@@ -133,4 +133,31 @@ function CCIP.decrementTTL(packet)
     return true
 end
 
+function CCIP.forward(packet)
+    local valid, reason = CCIP.validate(packet)
+
+    if not valid then
+        return nil, reason
+    end
+
+    if packet.ttl <= 1 then
+        return nil, "ip_ttl_expired"
+    end
+
+    local forwarded = {
+        version = packet.version,
+        source = packet.source,
+        destination = packet.destination,
+        ttl = packet.ttl - 1,
+        protocol = packet.protocol,
+        sourcePort = packet.sourcePort,
+        destinationPort = packet.destinationPort,
+        packetId = packet.packetId,
+        createdAt = packet.createdAt,
+        payload = packet.payload
+    }
+
+    return forwarded
+end
+
 return CCIP
