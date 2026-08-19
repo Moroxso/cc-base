@@ -1,27 +1,18 @@
 local ui = require("lib.ui")
 local Runtime = require("lib.runtime")
 local Automation = require("lib.automation")
+local Screen = require("lib.gui.screen")
 
 local APP_TITLE = "BASE CONTROL SYSTEM"
 local AUTOMATION_PATH = "/data/automation.json"
 
 local automation = Automation.new(AUTOMATION_PATH)
 
-local mainItems = {
-    "System status",
-    "Hello",
-    "Games",
-    "Redstone",
-    "Automation",
-    "Reboot",
-    "Shutdown"
-}
-
 local function waitForBack()
     while true do
         local _, key = os.pullEvent("key")
 
-        if key == keys.left then
+        if key == keys.left or key == keys.leftShift then
             return
         end
     end
@@ -145,7 +136,7 @@ local function showStatus()
     )
 
     ui.resetColors(term)
-    ui.drawFooter("LEFT - Back")
+    ui.drawFooter("LEFT / SHIFT - Back")
 
     waitForBack()
 end
@@ -167,7 +158,7 @@ local function showHello()
         colors.white
     )
 
-    ui.drawFooter("LEFT - Back")
+    ui.drawFooter("LEFT / SHIFT - Back")
 
     waitForBack()
 end
@@ -205,7 +196,7 @@ local function showProgramError(name, detail)
         )
     end
 
-    ui.drawFooter("LEFT - Back")
+    ui.drawFooter("LEFT / SHIFT - Back")
     waitForBack()
 end
 
@@ -232,7 +223,7 @@ local function showGames()
             "GAMES",
             gameItems,
             selected,
-            "UP/DOWN  ENTER  LEFT"
+            "UP/DOWN  ENTER  LEFT/SHIFT"
         )
 
         local _, key = os.pullEvent("key")
@@ -261,7 +252,7 @@ local function showGames()
                 return
             end
 
-        elseif key == keys.left then
+        elseif key == keys.left or key == keys.leftShift then
             return
         end
     end
@@ -295,60 +286,139 @@ local function shutdownComputer()
     os.shutdown()
 end
 
+local function createDashboardScreen()
+    local width = term.getSize()
+    local margin = 2
+    local gap = 2
+    local columnWidth = math.max(
+        12,
+        math.floor((width - margin * 2 - gap) / 2)
+    )
+
+    local leftX = margin
+    local rightX = leftX + columnWidth + gap
+    local rows = {5, 8, 11, 14}
+
+    local screen = Screen.new(term, {
+        columns = 2
+    })
+
+    local function add(id, label, column, row, background, foreground)
+        screen:addButton({
+            id = id,
+            label = label,
+            x = column == 1 and leftX or rightX,
+            y = rows[row],
+            width = columnWidth,
+            height = 2,
+            backgroundColor = background,
+            textColor = foreground or colors.white,
+            selectedBackgroundColor = colors.lightBlue,
+            selectedTextColor = colors.black
+        })
+    end
+
+    add("status", "System Status", 1, 1, colors.gray)
+    add("hello", "Hello", 2, 1, colors.gray)
+    add("games", "Games", 1, 2, colors.purple)
+    add("redstone", "Redstone", 2, 2, colors.red)
+    add("automation", "Automation", 1, 3, colors.orange, colors.black)
+    add("reboot", "Reboot", 2, 3, colors.brown)
+    add("shutdown", "Shutdown", 1, 4, colors.red)
+
+    return screen
+end
+
+local function drawDashboard(screen)
+    ui.drawHeader(APP_TITLE)
+
+    ui.centerText(
+        term,
+        4,
+        "DASHBOARD",
+        colors.lightGray
+    )
+
+    screen:draw()
+
+    local width, height = term.getSize()
+    local config = Automation.loadConfig(AUTOMATION_PATH)
+    local autoText = config.enabled and "ON" or "OFF"
+    local status = string.format(
+        "AUTO %s (%d)   VERSION %s",
+        autoText,
+        #config.rules,
+        readVersion()
+    )
+
+    if #status > width - 2 then
+        status = status:sub(1, width - 2)
+    end
+
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(
+        config.enabled and colors.lime or colors.red
+    )
+    term.setCursorPos(2, math.max(1, height - 2))
+    term.write(status)
+
+    ui.resetColors(term)
+    ui.drawFooter("MOUSE CLICK  ARROWS  ENTER  SHIFT")
+end
+
+local function activateDashboardAction(action)
+    if action == "status" then
+        showStatus()
+    elseif action == "hello" then
+        showHello()
+    elseif action == "games" then
+        showGames()
+    elseif action == "redstone" then
+        runProgram(
+            "Redstone Control",
+            "/apps/redstone.lua"
+        )
+    elseif action == "automation" then
+        runProgram(
+            "Automation",
+            "/apps/automation.lua"
+        )
+    elseif action == "reboot" then
+        rebootComputer()
+    elseif action == "shutdown" then
+        shutdownComputer()
+    end
+end
+
 local function mainLoop()
-    local selected = 1
+    local screen = createDashboardScreen()
 
     while true do
-        drawSelectionMenu(
-            "MAIN MENU",
-            mainItems,
-            selected,
-            "UP/DOWN  ENTER  LEFT"
-        )
+        drawDashboard(screen)
 
-        local _, key = os.pullEvent("key")
+        local event, a, b, c = os.pullEvent()
 
-        if key == keys.up then
-            selected = selected - 1
+        if event == "term_resize" then
+            screen = createDashboardScreen()
 
-            if selected < 1 then
-                selected = #mainItems
-            end
-
-        elseif key == keys.down then
-            selected = selected + 1
-
-            if selected > #mainItems then
-                selected = 1
-            end
-
-        elseif key == keys.enter then
-            if selected == 1 then
-                showStatus()
-            elseif selected == 2 then
-                showHello()
-            elseif selected == 3 then
-                showGames()
-            elseif selected == 4 then
-                runProgram(
-                    "Redstone Control",
-                    "/apps/redstone.lua"
-                )
-            elseif selected == 5 then
-                runProgram(
-                    "Automation",
-                    "/apps/automation.lua"
-                )
-            elseif selected == 6 then
-                rebootComputer()
-            elseif selected == 7 then
-                shutdownComputer()
-            end
-
-        elseif key == keys.left then
+        elseif event == "key" and a == keys.leftShift then
             ui.clear(term)
             print(APP_TITLE .. " closed.")
             return
+
+        else
+            local action, changed = screen:handleEvent(
+                event,
+                a,
+                b,
+                c
+            )
+
+            if action then
+                activateDashboardAction(action)
+            elseif changed then
+                drawDashboard(screen)
+            end
         end
     end
 end
