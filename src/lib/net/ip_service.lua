@@ -1,11 +1,13 @@
 local Address = require("lib.net.address")
 local CCIP = require("lib.net.ccip")
 local Protocol = require("lib.net.protocol")
+local Routes = require("lib.net.routes")
 
 local IPService = {}
 IPService.__index = IPService
 
 local CONTROL_PORT = 7
+local MAX_SEEN_PACKETS = 256
 local pendingSequence = 0
 
 local function newRequestId(prefix)
@@ -20,11 +22,19 @@ local function newRequestId(prefix)
     )
 end
 
-function IPService.new()
+function IPService.new(options)
+    options = options or {}
+
     local self = setmetatable({}, IPService)
 
     self.address = Address.localAddress()
+    self.routesPath = options.routesPath or Routes.DEFAULT_PATH
+    self.routes = Routes.load(self.routesPath)
     self.pending = {}
+    self.seenPackets = {}
+    self.seenOrder = {}
+    self.forwardedPackets = 0
+    self.droppedPackets = 0
     self.running = false
     self.lastError = ""
 
@@ -33,6 +43,58 @@ end
 
 function IPService:getAddress()
     return self.address
+end
+
+function IPService:getRoutes()
+    return self.routes
+end
+
+function IPService:rememberPacket(packetId)
+    if type(packetId) ~= "string" or packetId == "" then
+        return false
+    end
+
+    if self.seenPackets[packetId] then
+        return false
+    end
+
+    self.seenPackets[packetId] = true
+    table.insert(self.seenOrder, packetId)
+
+    while #self.seenOrder > MAX_SEEN_PACKETS do
+        local old = table.remove(self.seenOrder, 1)
+        self.seenPackets[old] = nil
+    end
+
+    return true
+end
+
+function IPService:saveRoutes()
+    local ok, err = Routes.save(self.routes, self.routesPath)
+
+    if not ok then
+        self.lastError = tostring(err or "route_save_failed")
+        return false, self.lastError
+    end
+
+    os.queueEvent("ccbase_routes_changed")
+    return true
+end
+
+function IPService:resolve(destination)
+    return Routes.resolve(self.routes, destination)
+end
+
+function IPService:isValidPreviousHop(source, sender)
+    local directId = Address.toComputerId(source)
+
+    if directId == sender then
+        return true
+    end
+
+    local route = self:resolve(source)
+
+    return route ~= nil and route.peerId == sender
 end
 
 function IPService:queueSecurePacket(peerId, ipPacket, context)
@@ -54,42 +116,46 @@ function IPService:queueSecurePacket(peerId, ipPacket, context)
     return netRequestId
 end
 
-function IPService:send(destination, protocolId, sourcePort, destinationPort, payload, requestId)
-    local peerId, addressError = Address.toComputerId(destination)
+function IPService:deliverLocal(packet, sender)
+    self.lastError = ""
 
-    if peerId == nil then
-        return false, addressError
+    if packet.protocol == CCIP.PROTOCOL_CONTROL and
+        packet.destinationPort == CONTROL_PORT
+    then
+        if self:handleControl(packet) then
+            return true
+        end
     end
 
-    local packet, packetError = CCIP.new(
-        destination,
-        protocolId,
-        sourcePort,
-        destinationPort,
-        payload
+    os.queueEvent(
+        "ccbase_ip_packet",
+        packet.source,
+        packet.destination,
+        packet.protocol,
+        packet.sourcePort,
+        packet.destinationPort,
+        packet.payload,
+        packet.packetId,
+        sender or os.getComputerID()
     )
 
-    if not packet then
-        return false, packetError
+    return true
+end
+
+function IPService:routePacket(packet, context, forwarding)
+    local valid, reason = CCIP.validate(packet)
+
+    if not valid then
+        return false, reason
     end
 
-    if peerId == os.getComputerID() then
-        os.queueEvent(
-            "ccbase_ip_packet",
-            packet.source,
-            packet.destination,
-            packet.protocol,
-            packet.sourcePort,
-            packet.destinationPort,
-            packet.payload,
-            packet.packetId,
-            os.getComputerID()
-        )
+    if packet.destination == self.address then
+        self:deliverLocal(packet, os.getComputerID())
 
-        if requestId ~= nil then
+        if context and context.kind == "send" and context.requestId ~= nil then
             os.queueEvent(
                 "ccbase_ip_send_result",
-                requestId,
+                context.requestId,
                 true,
                 packet.packetId
             )
@@ -98,41 +164,96 @@ function IPService:send(destination, protocolId, sourcePort, destinationPort, pa
         return true, packet.packetId
     end
 
-    self:queueSecurePacket(
-        peerId,
-        packet,
-        {
-            kind = "send",
-            requestId = requestId,
-            ipPacketId = packet.packetId,
-            destination = destination
-        }
-    )
+    local outbound = packet
 
-    return true, packet.packetId
-end
+    if forwarding then
+        if self.routes.forwarding ~= true then
+            self.droppedPackets = self.droppedPackets + 1
+            return false, "ip_forwarding_disabled"
+        end
 
-function IPService:sendControl(destination, payload, context)
-    local peerId, addressError = Address.toComputerId(destination)
+        outbound, reason = CCIP.forward(packet)
 
-    if peerId == nil then
-        return false, addressError
+        if not outbound then
+            self.droppedPackets = self.droppedPackets + 1
+            return false, reason
+        end
     end
 
+    local route, routeError = self:resolve(outbound.destination)
+
+    if not route then
+        self.droppedPackets = self.droppedPackets + 1
+        return false, routeError or "ip_no_route"
+    end
+
+    if route.peerId == os.getComputerID() then
+        self.droppedPackets = self.droppedPackets + 1
+        return false, "ip_route_loop"
+    end
+
+    self:queueSecurePacket(route.peerId, outbound, context)
+
+    if forwarding then
+        self.forwardedPackets = self.forwardedPackets + 1
+    end
+
+    return true, outbound.packetId
+end
+
+function IPService:send(destination, protocolId, sourcePort, destinationPort, payload, requestId)
     local packet, packetError = CCIP.new(
         destination,
-        CCIP.PROTOCOL_CONTROL,
-        CONTROL_PORT,
-        CONTROL_PORT,
-        payload
+        protocolId,
+        sourcePort,
+        destinationPort,
+        payload,
+        {
+            source = self.address
+        }
     )
 
     if not packet then
         return false, packetError
     end
 
-    self:queueSecurePacket(peerId, packet, context)
-    return true, packet.packetId
+    self:rememberPacket(packet.packetId)
+
+    return self:routePacket(
+        packet,
+        {
+            kind = "send",
+            requestId = requestId,
+            ipPacketId = packet.packetId,
+            destination = destination
+        },
+        false
+    )
+end
+
+function IPService:sendControl(destination, payload, context)
+    local packet, packetError = CCIP.new(
+        destination,
+        CCIP.PROTOCOL_CONTROL,
+        CONTROL_PORT,
+        CONTROL_PORT,
+        payload,
+        {
+            source = self.address
+        }
+    )
+
+    if not packet then
+        return false, packetError
+    end
+
+    self:rememberPacket(packet.packetId)
+
+    return self:routePacket(
+        packet,
+        context or {kind = "internal"},
+        false
+    )
 end
 
 function IPService:ping(destination)
@@ -215,6 +336,7 @@ function IPService:handleIncoming(sender, serviceName, messageType, payload, tru
 
     if trusted ~= true then
         self.lastError = "ip_untrusted_outer_packet"
+        self.droppedPackets = self.droppedPackets + 1
         return false
     end
 
@@ -222,44 +344,43 @@ function IPService:handleIncoming(sender, serviceName, messageType, payload, tru
 
     if not valid then
         self.lastError = tostring(reason)
+        self.droppedPackets = self.droppedPackets + 1
         return false
     end
 
-    local expectedSender = Address.toComputerId(payload.source)
-
-    if expectedSender ~= sender then
-        self.lastError = "ip_source_mismatch"
+    if not self:isValidPreviousHop(payload.source, sender) then
+        self.lastError = "ip_reverse_path_mismatch"
+        self.droppedPackets = self.droppedPackets + 1
         return false
     end
 
-    if payload.destination ~= self.address then
-        self.lastError = "ip_not_for_local_host"
+    if not self:rememberPacket(payload.packetId) then
+        self.lastError = "ip_duplicate_packet"
+        self.droppedPackets = self.droppedPackets + 1
         return false
     end
 
-    self.lastError = ""
-
-    if payload.protocol == CCIP.PROTOCOL_CONTROL and
-        payload.destinationPort == CONTROL_PORT
-    then
-        if self:handleControl(payload) then
-            return true
-        end
+    if payload.destination == self.address then
+        return self:deliverLocal(payload, sender)
     end
 
-    os.queueEvent(
-        "ccbase_ip_packet",
-        payload.source,
-        payload.destination,
-        payload.protocol,
-        payload.sourcePort,
-        payload.destinationPort,
-        payload.payload,
-        payload.packetId,
-        sender
+    local ok, forwardError = self:routePacket(
+        payload,
+        {
+            kind = "forward",
+            source = payload.source,
+            destination = payload.destination
+        },
+        true
     )
 
-    return true
+    if not ok then
+        self.lastError = tostring(forwardError or "ip_forward_failed")
+    else
+        self.lastError = ""
+    end
+
+    return ok
 end
 
 function IPService:handleNetSendResult(requestId, ok, detail)
@@ -285,9 +406,97 @@ function IPService:handleNetSendResult(requestId, ok, detail)
             context.destination,
             detail or "send_failed"
         )
+
+    elseif context.kind == "forward" and not ok then
+        self.lastError = "ip_forward_send_failed:" .. tostring(detail or "unknown")
     end
 
     return true
+end
+
+function IPService:setDefaultGateway(gateway, requestId)
+    local updated, ok, err = Routes.setDefaultGateway(
+        self.routes,
+        gateway
+    )
+
+    if ok then
+        self.routes = updated
+        ok, err = self:saveRoutes()
+    end
+
+    os.queueEvent(
+        "ccbase_route_action",
+        requestId or "",
+        ok == true,
+        err or (gateway or "DIRECT"),
+        "default_gateway"
+    )
+
+    return ok == true, err
+end
+
+function IPService:setForwarding(enabled, requestId)
+    self.routes = Routes.setForwarding(self.routes, enabled == true)
+    local ok, err = self:saveRoutes()
+
+    os.queueEvent(
+        "ccbase_route_action",
+        requestId or "",
+        ok == true,
+        err or (self.routes.forwarding and "ON" or "OFF"),
+        "forwarding"
+    )
+
+    return ok == true, err
+end
+
+function IPService:addRoute(network, prefix, gateway, metric, requestId)
+    local updated, ok, err = Routes.add(
+        self.routes,
+        {
+            network = network,
+            prefix = prefix,
+            gateway = gateway,
+            metric = metric
+        }
+    )
+
+    if ok then
+        self.routes = updated
+        ok, err = self:saveRoutes()
+    end
+
+    os.queueEvent(
+        "ccbase_route_action",
+        requestId or "",
+        ok == true,
+        err or "route_saved",
+        "route_add"
+    )
+
+    return ok == true, err
+end
+
+function IPService:removeRoute(network, prefix, requestId)
+    local updated, changed = Routes.remove(self.routes, network, prefix)
+    local ok = changed
+    local err = changed and nil or "route_not_found"
+
+    if changed then
+        self.routes = updated
+        ok, err = self:saveRoutes()
+    end
+
+    os.queueEvent(
+        "ccbase_route_action",
+        requestId or "",
+        ok == true,
+        err or "route_removed",
+        "route_remove"
+    )
+
+    return ok == true, err
 end
 
 function IPService:run()
@@ -316,6 +525,25 @@ function IPService:run()
 
         elseif event == "ccbase_ip_ping" then
             self:ping(a)
+
+        elseif event == "ccbase_route_set_default" then
+            self:setDefaultGateway(a, b)
+
+        elseif event == "ccbase_route_clear_default" then
+            self:setDefaultGateway(nil, a)
+
+        elseif event == "ccbase_route_set_forwarding" then
+            self:setForwarding(a == true, b)
+
+        elseif event == "ccbase_route_add" then
+            self:addRoute(a, b, c, d, e)
+
+        elseif event == "ccbase_route_remove" then
+            self:removeRoute(a, b, c)
+
+        elseif event == "ccbase_routes_reload" then
+            self.routes = Routes.load(self.routesPath)
+            os.queueEvent("ccbase_routes_changed")
         end
     end
 end
