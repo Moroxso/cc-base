@@ -6,6 +6,7 @@ local NetworkService = require("lib.net.service")
 local IPService = require("lib.net.ip_service")
 local DatagramService = require("lib.net.datagram_service")
 local StreamService = require("lib.net.stream_service")
+local SecurityService = require("lib.security.service")
 local Address = require("lib.net.address")
 
 local APP_TITLE = "BASE CONTROL SYSTEM"
@@ -16,6 +17,7 @@ local network = NetworkService.new()
 local ip = IPService.new()
 local datagrams = DatagramService.new()
 local streams = StreamService.new()
+local security = SecurityService.new()
 
 local function waitForBack()
     while true do
@@ -493,5 +495,8 @@ parallel.waitForAny(
     end,
     function()
         streams:run()
+    end,
+    function()
+        security:run()
     end
 )
