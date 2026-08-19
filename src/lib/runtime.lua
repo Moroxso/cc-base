@@ -2,7 +2,21 @@ local ccRequire = require("cc.require")
 
 local Runtime = {}
 
-local function makeEnvironment(baseDir)
+local function normalizeDir(path)
+    local dir = fs.getDir(path)
+
+    if dir == "" then
+        return "/"
+    end
+
+    if dir:sub(1, 1) ~= "/" then
+        dir = "/" .. dir
+    end
+
+    return dir
+end
+
+local function makeEnvironment(programPath)
     local env = setmetatable({}, {
         __index = _ENV
     })
@@ -10,8 +24,17 @@ local function makeEnvironment(baseDir)
     env._G = env
     env.require, env.package = ccRequire.make(
         env,
-        baseDir or "/"
+        "/"
     )
+
+    local programDir = normalizeDir(programPath)
+
+    if programDir ~= "/" then
+        env.package.path =
+            programDir .. "/?.lua;" ..
+            programDir .. "/?/init.lua;" ..
+            env.package.path
+    end
 
     return env
 end
@@ -25,7 +48,7 @@ function Runtime.run(path, ...)
         return false, "Program not found: " .. path
     end
 
-    local env = makeEnvironment("/")
+    local env = makeEnvironment(path)
     local ok = os.run(env, path, ...)
 
     if not ok then
