@@ -67,11 +67,25 @@ function Renderer:drawBoard(game)
     end
 
     if game.current and not game.gameOver then
-        local color = Pieces.getColor(game.current.kind)
         local cells = Pieces.getCells(
             game.current.kind,
             game.current.rotation
         )
+
+        local ghostY = game:getGhostY()
+
+        if ghostY and ghostY > game.current.y then
+            for _, cell in ipairs(cells) do
+                local x = game.current.x + cell[1]
+                local y = ghostY + cell[2]
+
+                if y >= 1 and y <= board.height then
+                    self:drawCell(x, y, colors.gray)
+                end
+            end
+        end
+
+        local color = Pieces.getColor(game.current.kind)
 
         for _, cell in ipairs(cells) do
             local x = game.current.x + cell[1]
@@ -142,16 +156,27 @@ function Renderer:drawOverlay(game)
     self:resetColors()
 end
 
-function Renderer:draw(game, buttons)
+function Renderer:draw(game, buttons, records)
     self:clear()
     self:drawBoard(game)
+
+    records = records or {
+        highScore = 0,
+        bestLines = 0,
+        bestLevel = 1
+    }
 
     local infoX = self.boardX + game.board.width * self.cellWidth + 4
 
     self:write(infoX, 2, "TETRIS", colors.cyan)
     self:write(infoX, 4, "Score: " .. game.score, colors.white)
-    self:write(infoX, 5, "Lines: " .. game.lines, colors.white)
-    self:write(infoX, 6, "Level: " .. game.level, colors.white)
+    self:write(infoX, 5, "High:  " .. records.highScore, colors.yellow)
+    self:write(
+        infoX,
+        6,
+        "Lines: " .. game.lines .. "  L" .. game.level,
+        colors.white
+    )
     self:drawPreview(game.nextKind, infoX, 8)
 
     for _, button in ipairs(buttons or {}) do
