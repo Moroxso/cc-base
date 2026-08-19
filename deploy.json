@@ -1,5 +1,5 @@
 {
-  "version": "0.11.0",
+  "version": "0.12.0",
   "files": [
     {
       "source": "src/startup.lua",
@@ -32,6 +32,18 @@
     {
       "source": "src/lib/gui/screen.lua",
       "target": "lib/gui/screen.lua"
+    },
+    {
+      "source": "src/lib/gui/toggle.lua",
+      "target": "lib/gui/toggle.lua"
+    },
+    {
+      "source": "src/lib/gui/slider.lua",
+      "target": "lib/gui/slider.lua"
+    },
+    {
+      "source": "src/lib/gui/tabbar.lua",
+      "target": "lib/gui/tabbar.lua"
     },
     {
       "source": "src/apps/redstone.lua",
