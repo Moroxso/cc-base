@@ -1,12 +1,17 @@
 local ui = require("lib.ui")
+local Automation = require("lib.automation")
 
 local APP_TITLE = "BASE CONTROL SYSTEM"
+local AUTOMATION_PATH = "/data/automation.json"
+
+local automation = Automation.new(AUTOMATION_PATH)
 
 local mainItems = {
     "System status",
     "Hello",
     "Games",
     "Redstone",
+    "Automation",
     "Reboot",
     "Shutdown"
 }
@@ -54,8 +59,16 @@ local function drawSelectionMenu(title, items, selected, footer)
         colors.lightGray
     )
 
+    local _, height = term.getSize()
+    local availableRows = math.max(1, height - 7)
+    local spacing = 1
+
+    if #items * 2 <= availableRows then
+        spacing = 2
+    end
+
     for i, item in ipairs(items) do
-        local y = 6 + i * 2
+        local y = 6 + i * spacing
 
         if i == selected then
             term.setBackgroundColor(colors.white)
@@ -84,29 +97,29 @@ local function showStatus()
         colors.cyan
     )
 
-    term.setCursorPos(4, 8)
+    term.setCursorPos(4, 7)
     term.setTextColor(colors.lime)
     term.write("STATUS: ONLINE")
 
     ui.resetColors(term)
 
-    term.setCursorPos(4, 10)
+    term.setCursorPos(4, 9)
     term.write("Computer ID: " .. os.getComputerID())
 
     local label = os.getComputerLabel()
 
-    term.setCursorPos(4, 11)
+    term.setCursorPos(4, 10)
     term.write("Computer name: " .. (label or "NOT SET"))
 
     local width, height = term.getSize()
 
-    term.setCursorPos(4, 12)
+    term.setCursorPos(4, 11)
     term.write("Terminal: " .. width .. "x" .. height)
 
-    term.setCursorPos(4, 13)
+    term.setCursorPos(4, 12)
     term.write("Version: " .. readVersion())
 
-    term.setCursorPos(4, 14)
+    term.setCursorPos(4, 13)
 
     if http then
         term.setTextColor(colors.lime)
@@ -115,6 +128,20 @@ local function showStatus()
         term.setTextColor(colors.red)
         term.write("HTTP API: UNAVAILABLE")
     end
+
+    ui.resetColors(term)
+
+    local config = Automation.loadConfig(AUTOMATION_PATH)
+
+    term.setCursorPos(4, 14)
+    term.setTextColor(
+        config.enabled and colors.lime or colors.red
+    )
+    term.write(
+        "Automation: " ..
+        (config.enabled and "ON" or "OFF") ..
+        " (" .. #config.rules .. " rules)"
+    )
 
     ui.resetColors(term)
     ui.drawFooter("LEFT - Back")
@@ -251,53 +278,67 @@ local function shutdownComputer()
     os.shutdown()
 end
 
-local selected = 1
+local function mainLoop()
+    local selected = 1
 
-while true do
-    drawSelectionMenu(
-        "MAIN MENU",
-        mainItems,
-        selected,
-        "UP/DOWN  ENTER  LEFT"
-    )
+    while true do
+        drawSelectionMenu(
+            "MAIN MENU",
+            mainItems,
+            selected,
+            "UP/DOWN  ENTER  LEFT"
+        )
 
-    local _, key = os.pullEvent("key")
+        local _, key = os.pullEvent("key")
 
-    if key == keys.up then
-        selected = selected - 1
+        if key == keys.up then
+            selected = selected - 1
 
-        if selected < 1 then
-            selected = #mainItems
+            if selected < 1 then
+                selected = #mainItems
+            end
+
+        elseif key == keys.down then
+            selected = selected + 1
+
+            if selected > #mainItems then
+                selected = 1
+            end
+
+        elseif key == keys.enter then
+            if selected == 1 then
+                showStatus()
+            elseif selected == 2 then
+                showHello()
+            elseif selected == 3 then
+                showGames()
+            elseif selected == 4 then
+                runProgram(
+                    "Redstone Control",
+                    "/apps/redstone.lua"
+                )
+            elseif selected == 5 then
+                runProgram(
+                    "Automation",
+                    "/apps/automation.lua"
+                )
+            elseif selected == 6 then
+                rebootComputer()
+            elseif selected == 7 then
+                shutdownComputer()
+            end
+
+        elseif key == keys.left then
+            ui.clear(term)
+            print(APP_TITLE .. " closed.")
+            return
         end
-
-    elseif key == keys.down then
-        selected = selected + 1
-
-        if selected > #mainItems then
-            selected = 1
-        end
-
-    elseif key == keys.enter then
-        if selected == 1 then
-            showStatus()
-        elseif selected == 2 then
-            showHello()
-        elseif selected == 3 then
-            showGames()
-        elseif selected == 4 then
-            runProgram(
-                "Redstone Control",
-                "/apps/redstone.lua"
-            )
-        elseif selected == 5 then
-            rebootComputer()
-        elseif selected == 6 then
-            shutdownComputer()
-        end
-
-    elseif key == keys.left then
-        ui.clear(term)
-        print(APP_TITLE .. " closed.")
-        break
     end
 end
+
+parallel.waitForAny(
+    mainLoop,
+    function()
+        automation:run()
+    end
+)
