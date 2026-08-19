@@ -6,7 +6,7 @@ Peers.DEFAULT_PATH = "/data/network/peers.json"
 
 local function defaultData()
     return {
-        version = 1,
+        version = 2,
         peers = {}
     }
 end
@@ -49,10 +49,21 @@ local function normalizePeer(peer)
         return nil
     end
 
+    local trusted = peer.trusted == true
+    local sessionId = nil
+
+    if trusted and type(peer.sessionId) == "string" and peer.sessionId ~= "" then
+        sessionId = peer.sessionId:sub(1, 128)
+    end
+
     return {
         id = math.floor(id),
         label = tostring(peer.label or ("Computer " .. tostring(math.floor(id)))),
-        trusted = peer.trusted == true,
+        trusted = trusted,
+        pairedAt = math.max(0, math.floor(tonumber(peer.pairedAt) or 0)),
+        sessionId = sessionId,
+        rxSeq = math.max(0, math.floor(tonumber(peer.rxSeq) or 0)),
+        txSeq = math.max(0, math.floor(tonumber(peer.txSeq) or 0)),
         lastSeen = math.max(0, math.floor(tonumber(peer.lastSeen) or 0)),
         latencyMs = math.max(0, math.floor(tonumber(peer.latencyMs) or 0)),
         protocolVersion = math.max(0, math.floor(tonumber(peer.protocolVersion) or 0)),
@@ -158,6 +169,10 @@ function Peers.observe(data, id, info)
             id = id,
             label = "Computer " .. tostring(id),
             trusted = false,
+            pairedAt = 0,
+            sessionId = nil,
+            rxSeq = 0,
+            txSeq = 0,
             lastSeen = 0,
             latencyMs = 0,
             protocolVersion = 0,
@@ -215,7 +230,7 @@ function Peers.observe(data, id, info)
     return changed, peer
 end
 
-function Peers.setTrusted(data, id, trusted)
+function Peers.setTrusted(data, id, trusted, sessionId)
     local peer = Peers.find(data, id)
 
     if not peer then
@@ -224,11 +239,64 @@ function Peers.setTrusted(data, id, trusted)
 
     trusted = trusted == true
 
-    if peer.trusted == trusted then
-        return false
+    if trusted then
+        if type(sessionId) ~= "string" or sessionId == "" then
+            return false
+        end
+
+        peer.trusted = true
+        peer.pairedAt = Protocol.nowMs()
+        peer.sessionId = sessionId:sub(1, 128)
+        peer.rxSeq = 0
+        peer.txSeq = 0
+        return true
     end
 
-    peer.trusted = trusted
+    local changed = peer.trusted or peer.sessionId ~= nil or
+        peer.rxSeq ~= 0 or peer.txSeq ~= 0
+
+    peer.trusted = false
+    peer.pairedAt = 0
+    peer.sessionId = nil
+    peer.rxSeq = 0
+    peer.txSeq = 0
+
+    return changed
+end
+
+function Peers.nextOutboundSeq(data, id)
+    local peer = Peers.find(data, id)
+
+    if not peer or not peer.trusted or not peer.sessionId then
+        return nil
+    end
+
+    peer.txSeq = math.max(0, tonumber(peer.txSeq) or 0) + 1
+    return peer.txSeq, peer.sessionId
+end
+
+function Peers.acceptInboundSeq(data, id, sessionId, seq)
+    local peer = Peers.find(data, id)
+
+    if not peer or not peer.trusted or not peer.sessionId then
+        return false, "untrusted_peer"
+    end
+
+    if sessionId ~= peer.sessionId then
+        return false, "session_mismatch"
+    end
+
+    seq = tonumber(seq)
+
+    if not seq or seq ~= math.floor(seq) or seq < 1 then
+        return false, "bad_sequence"
+    end
+
+    if seq <= (tonumber(peer.rxSeq) or 0) then
+        return false, "replayed_sequence"
+    end
+
+    peer.rxSeq = seq
     return true
 end
 
