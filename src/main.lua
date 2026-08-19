@@ -185,7 +185,7 @@ local function createGamesScreen()
         id = "breakout",
         label = "Breakout",
         x = x,
-        y = 6,
+        y = 5,
         width = buttonWidth,
         height = 2,
         backgroundColor = colors.blue,
@@ -196,11 +196,22 @@ local function createGamesScreen()
         id = "tetris",
         label = "Tetris",
         x = x,
-        y = 10,
+        y = 8,
         width = buttonWidth,
         height = 2,
         backgroundColor = colors.cyan,
         textColor = colors.black
+    })
+
+    screen:addButton({
+        id = "chess",
+        label = "Chess PvP",
+        x = x,
+        y = 11,
+        width = buttonWidth,
+        height = 2,
+        backgroundColor = colors.brown,
+        textColor = colors.white
     })
 
     screen:addButton({
@@ -257,6 +268,11 @@ local function showGames()
                 runProgram(
                     "Tetris",
                     "/games/tetris.lua"
+                )
+            elseif action == "chess" then
+                runProgram(
+                    "Chess PvP",
+                    "/games/chess.lua"
                 )
             elseif action == "back" then
                 return
