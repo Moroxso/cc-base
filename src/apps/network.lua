@@ -4,7 +4,6 @@ local Protocol = require("lib.net.protocol")
 local Transport = require("lib.net.transport")
 local Peers = require("lib.net.peers")
 local Address = require("lib.net.address")
-local IPService = require("lib.net.ip_service")
 
 local STATUS_PATH = "/data/network/status.json"
 
@@ -19,10 +18,9 @@ if width < 48 or height < 18 then
 end
 
 local running = true
-local message = "Network Core + CCIP diagnostics"
+local message = "Network Core + CCIP + CCDP diagnostics"
 local peersData = Peers.load()
 local lastStatus = nil
-local ipService = IPService.new()
 local localAddress = Address.localAddress() or "UNAVAILABLE"
 
 local function resetColors()
@@ -156,12 +154,23 @@ local backButton = Button.new({
 local ipPingButton = Button.new({
     id = "ip_ping",
     label = "CCIP Ping",
-    x = 13,
+    x = 2,
     y = 15,
     width = 14,
     height = 1,
     backgroundColor = colors.cyan,
     textColor = colors.black
+})
+
+local ccdpPingButton = Button.new({
+    id = "ccdp_ping",
+    label = "CCDP Echo",
+    x = 17,
+    y = 15,
+    width = 14,
+    height = 1,
+    backgroundColor = colors.purple,
+    textColor = colors.white
 })
 
 local function refreshPeers()
@@ -208,7 +217,7 @@ local function drawHeader()
         term.write(string.rep(" ", width))
     end
 
-    local title = "NETWORK CORE / CCIP"
+    local title = "NETWORK CORE / CCIP / CCDP"
     local x = math.max(1, math.floor((width - #title) / 2) + 1)
     term.setCursorPos(x, 2)
     term.write(title)
@@ -216,10 +225,10 @@ local function drawHeader()
 end
 
 local function drawFooter()
-    local footer = "MOUSE  ARROWS peer  ENTER ping  RIGHT ip  CTRL scan  SHIFT"
+    local footer = "LEFT ccdp RIGHT ccip ENTER core CTRL scan SHIFT back"
 
     if #footer > width then
-        footer = "MOUSE ARROWS ENTER ping RIGHT ip CTRL scan SHIFT"
+        footer = "LEFT ccdp RIGHT ccip ENTER ping CTRL scan SHIFT"
     end
 
     term.setBackgroundColor(colors.gray)
@@ -346,8 +355,11 @@ local function draw()
     pairButton:draw(term)
     backButton:draw(term)
 
-    ipPingButton:setEnabled(selected ~= nil and selected.trusted == true)
+    local secureEnabled = selected ~= nil and selected.trusted == true
+    ipPingButton:setEnabled(secureEnabled)
+    ccdpPingButton:setEnabled(secureEnabled)
     ipPingButton:draw(term)
+    ccdpPingButton:draw(term)
 
     if pending and pending.code then
         local localState = pending.localConfirmed and "YES" or "NO"
@@ -367,7 +379,7 @@ local function draw()
             2,
             16,
             width - 3,
-            "Trusted link: CCIP packets allowed to " .. peerAddress(selected),
+            "Trusted link: CCIP host + CCDP datagrams available.",
             colors.lime
         )
     else
@@ -429,6 +441,19 @@ local function ipPingSelected()
     message = "CCIP echo requested for " .. address .. "..."
 end
 
+local function ccdpPingSelected()
+    local peer = peerList:getSelectedItem()
+
+    if not peer or not peer.trusted then
+        message = "CCDP requires a trusted peer."
+        return
+    end
+
+    local address = peerAddress(peer)
+    os.queueEvent("ccbase_ccdp_ping", address)
+    message = "CCDP datagram echo sent to " .. address .. "..."
+end
+
 local function pairSelected()
     local peer = peerList:getSelectedItem()
 
@@ -486,6 +511,9 @@ local function uiLoop()
             elseif ipPingButton:contains(b, c) and ipPingButton.enabled then
                 ipPingSelected()
                 redraw = true
+            elseif ccdpPingButton:contains(b, c) and ccdpPingButton.enabled then
+                ccdpPingSelected()
+                redraw = true
             elseif backButton:contains(b, c) then
                 running = false
             end
@@ -502,6 +530,9 @@ local function uiLoop()
                 redraw = true
             elseif a == keys.right then
                 ipPingSelected()
+                redraw = true
+            elseif a == keys.left then
+                ccdpPingSelected()
                 redraw = true
             elseif a == keys.leftCtrl then
                 startScan()
@@ -542,6 +573,26 @@ local function uiLoop()
 
         elseif event == "ccbase_ip_ping_failed" then
             message = "CCIP send failed: " .. tostring(b)
+            redraw = true
+
+        elseif event == "ccbase_ccdp_pong" then
+            message = string.format(
+                "CCDP echo from %s: %sms",
+                tostring(a),
+                tostring(b)
+            )
+            redraw = true
+
+        elseif event == "ccbase_ccdp_ping_started" then
+            if b then
+                message = "CCDP datagram queued for " .. tostring(a)
+            else
+                message = "CCDP echo failed: " .. tostring(c)
+            end
+            redraw = true
+
+        elseif event == "ccbase_ccdp_ping_failed" then
+            message = "CCDP echo timeout/failure: " .. tostring(b)
             redraw = true
 
         elseif event == "ccbase_net_scan_started" then
@@ -600,12 +651,7 @@ local function uiLoop()
     end
 end
 
-parallel.waitForAny(
-    uiLoop,
-    function()
-        ipService:run()
-    end
-)
+uiLoop()
 
 resetColors()
 term.clear()
