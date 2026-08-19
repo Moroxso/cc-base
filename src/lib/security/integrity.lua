@@ -19,6 +19,24 @@ local PROTECTED_ROOTS = {
     "/games"
 }
 
+local function canonicalPath(path)
+    path = tostring(path or ""):gsub("\\", "/")
+
+    if path == "" then
+        return "/"
+    end
+
+    if path:sub(1, 1) ~= "/" then
+        path = "/" .. path
+    end
+
+    while path:find("//", 1, true) do
+        path = path:gsub("//", "/")
+    end
+
+    return path
+end
+
 local function nowMs()
     if os.epoch then
         return os.epoch("utc")
@@ -36,6 +54,8 @@ local function ensureParent(path)
 end
 
 local function readAll(path)
+    path = canonicalPath(path)
+
     if not fs.exists(path) or fs.isDir(path) then
         return nil
     end
@@ -68,6 +88,7 @@ local function readJson(path)
 end
 
 local function writeAtomic(path, data)
+    path = canonicalPath(path)
     ensureParent(path)
 
     local ok, raw = pcall(textutils.serializeJSON, data)
@@ -138,7 +159,7 @@ local function normalizeTarget(target)
         return nil
     end
 
-    return "/" .. target
+    return canonicalPath(target)
 end
 
 local function loadManifest()
@@ -249,6 +270,8 @@ function Integrity.ensureBaseline()
 end
 
 local function collectFiles(path, output)
+    path = canonicalPath(path)
+
     if not fs.exists(path) then
         return
     end
@@ -259,7 +282,7 @@ local function collectFiles(path, output)
     end
 
     for _, name in ipairs(fs.list(path)) do
-        collectFiles(fs.combine(path, name), output)
+        collectFiles(canonicalPath(fs.combine(path, name)), output)
     end
 end
 
@@ -277,7 +300,7 @@ end
 local function issue(kind, path, expected, actual)
     return {
         kind = kind,
-        path = path,
+        path = canonicalPath(path),
         expected = expected,
         actual = actual
     }
@@ -303,19 +326,20 @@ function Integrity.scan()
     local expected = {}
 
     for _, entry in ipairs(baseline.files) do
-        expected[entry.path] = true
+        local entryPath = canonicalPath(entry.path)
+        expected[entryPath] = true
 
-        if not fs.exists(entry.path) then
-            table.insert(issues, issue("missing", entry.path, entry.hash, "missing"))
-        elseif fs.isDir(entry.path) then
-            table.insert(issues, issue("type_changed", entry.path, "file", "directory"))
+        if not fs.exists(entryPath) then
+            table.insert(issues, issue("missing", entryPath, entry.hash, "missing"))
+        elseif fs.isDir(entryPath) then
+            table.insert(issues, issue("type_changed", entryPath, "file", "directory"))
         else
-            local hash, size = Integrity.hashFile(entry.path)
+            local hash, size = Integrity.hashFile(entryPath)
 
             if not hash then
-                table.insert(issues, issue("unreadable", entry.path, entry.hash, "unreadable"))
+                table.insert(issues, issue("unreadable", entryPath, entry.hash, "unreadable"))
             elseif hash ~= entry.hash or size ~= entry.size then
-                table.insert(issues, issue("modified", entry.path, entry.hash, hash))
+                table.insert(issues, issue("modified", entryPath, entry.hash, hash))
             end
         end
     end
@@ -418,8 +442,8 @@ function Integrity.quarantineContent(name, content, metadata)
     end
 
     local id = string.format("%d-%d-%s", nowMs(), os.getComputerID(), sanitizeName(name))
-    local dataPath = fs.combine(Integrity.QUARANTINE_DIR, id .. ".bin")
-    local metaPath = fs.combine(Integrity.QUARANTINE_DIR, id .. ".json")
+    local dataPath = canonicalPath(fs.combine(Integrity.QUARANTINE_DIR, id .. ".bin"))
+    local metaPath = canonicalPath(fs.combine(Integrity.QUARANTINE_DIR, id .. ".json"))
 
     local file = fs.open(dataPath, "w")
 
@@ -450,11 +474,12 @@ function Integrity.quarantineContent(name, content, metadata)
 end
 
 function Integrity.quarantineUnexpected(path)
+    path = canonicalPath(path)
     local status = Integrity.scan()
     local allowed = false
 
     for _, item in ipairs(status.issues or {}) do
-        if item.kind == "unexpected" and item.path == path then
+        if item.kind == "unexpected" and canonicalPath(item.path) == path then
             allowed = true
             break
         end
