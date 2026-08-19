@@ -4,12 +4,12 @@ local Button = require("lib.gui.button")
 
 local width, height = term.getSize()
 
-if width < 50 or height < 19 then
+if width < 51 or height < 19 then
     term.setBackgroundColor(colors.black)
     term.setTextColor(colors.white)
     term.clear()
     term.setCursorPos(1, 1)
-    error("Terminal is too small for Chess (need at least 50x19)")
+    error("Terminal is too small for Chess (need at least 51x19)")
 end
 
 local game = Game.new()
@@ -22,7 +22,7 @@ local restartButton = Button.new({
     label = "New Game",
     x = 36,
     y = 14,
-    width = 14,
+    width = 15,
     height = 1,
     backgroundColor = colors.blue,
     textColor = colors.white
@@ -33,7 +33,7 @@ local backButton = Button.new({
     label = "Back",
     x = 36,
     y = 16,
-    width = 14,
+    width = 15,
     height = 1,
     backgroundColor = colors.red,
     textColor = colors.white
@@ -50,9 +50,9 @@ local promotionButtons = {
     Button.new({
         id = "queen",
         label = "Queen",
-        x = 36,
+        x = 35,
         y = 9,
-        width = 7,
+        width = 8,
         height = 1,
         backgroundColor = colors.gray
     }),
@@ -61,16 +61,16 @@ local promotionButtons = {
         label = "Rook",
         x = 44,
         y = 9,
-        width = 7,
+        width = 8,
         height = 1,
         backgroundColor = colors.gray
     }),
     Button.new({
         id = "bishop",
         label = "Bishop",
-        x = 36,
+        x = 35,
         y = 11,
-        width = 7,
+        width = 8,
         height = 1,
         backgroundColor = colors.gray
     }),
@@ -79,7 +79,7 @@ local promotionButtons = {
         label = "Knight",
         x = 44,
         y = 11,
-        width = 7,
+        width = 8,
         height = 1,
         backgroundColor = colors.gray
     })
@@ -120,8 +120,14 @@ local function choosePromotion(index)
     return false
 end
 
+local function isPointerClick(button)
+    -- Standard CC:T uses 1 for left click. Polymer's compatibility
+    -- layer has also used 0 for one of its pointer paths, so accept both.
+    return button == 1 or button == 0
+end
+
 local function handleMouse(button, x, y)
-    if button ~= 1 then
+    if not isPointerClick(button) then
         return false
     end
 
@@ -150,7 +156,7 @@ local function handleMouse(button, x, y)
     local boardX, boardY = renderer:screenToSquare(x, y)
 
     if boardX then
-        local result = game:selectSquare(boardX, boardY)
+        local result = game:clickSquare(boardX, boardY)
 
         if result == "promotion" then
             promotionIndex = 1
@@ -251,7 +257,7 @@ while running do
     elseif event == "term_resize" then
         local newWidth, newHeight = term.getSize()
 
-        if newWidth < 50 or newHeight < 19 then
+        if newWidth < 51 or newHeight < 19 then
             running = false
         else
             redrawNeeded = true
