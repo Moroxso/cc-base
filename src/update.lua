@@ -7,7 +7,7 @@ local BASE_URL =
     .. OWNER
     .. "/"
     .. REPO
-    .. "/"
+    .. "/refs/heads/"
     .. BRANCH
     .. "/"
 
