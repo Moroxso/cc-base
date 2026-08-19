@@ -1,4 +1,5 @@
 local ui = require("lib.ui")
+local Runtime = require("lib.runtime")
 local Automation = require("lib.automation")
 
 local APP_TITLE = "BASE CONTROL SYSTEM"
@@ -171,7 +172,7 @@ local function showHello()
     waitForBack()
 end
 
-local function showProgramError(name)
+local function showProgramError(name, detail)
     ui.drawHeader(APP_TITLE)
 
     ui.centerText(
@@ -188,6 +189,22 @@ local function showProgramError(name)
         colors.white
     )
 
+    if detail then
+        local width = term.getSize()
+        local text = tostring(detail)
+
+        if #text > width - 6 then
+            text = text:sub(1, width - 9) .. "..."
+        end
+
+        ui.centerText(
+            term,
+            11,
+            text,
+            colors.lightGray
+        )
+    end
+
     ui.drawFooter("LEFT - Back")
     waitForBack()
 end
@@ -195,10 +212,10 @@ end
 local function runProgram(name, path)
     ui.clear(term)
 
-    local ok = shell.run(path)
+    local ok, err = Runtime.run(path)
 
     if not ok then
-        showProgramError(name)
+        showProgramError(name, err)
     end
 end
 
