@@ -48,7 +48,7 @@ end
 function Protocol.new(service, messageType, payload, options)
     options = options or {}
 
-    return {
+    local packet = {
         magic = Protocol.MAGIC,
         version = Protocol.VERSION,
         service = tostring(service or "core"),
@@ -58,6 +58,16 @@ function Protocol.new(service, messageType, payload, options)
         createdAt = options.createdAt or nowMs(),
         payload = type(payload) == "table" and payload or {}
     }
+
+    if options.session ~= nil then
+        packet.session = tostring(options.session)
+    end
+
+    if options.seq ~= nil then
+        packet.seq = math.floor(tonumber(options.seq) or 0)
+    end
+
+    return packet
 end
 
 function Protocol.validate(packet, rednetSender)
@@ -100,6 +110,26 @@ function Protocol.validate(packet, rednetSender)
         #packet.packetId > 128
     then
         return false, "bad_packet_id"
+    end
+
+    if type(packet.createdAt) ~= "number" then
+        return false, "bad_created_at"
+    end
+
+    if packet.session ~= nil and
+        (type(packet.session) ~= "string" or
+         packet.session == "" or
+         #packet.session > 128)
+    then
+        return false, "bad_session"
+    end
+
+    if packet.seq ~= nil and
+        (type(packet.seq) ~= "number" or
+         packet.seq < 1 or
+         packet.seq ~= math.floor(packet.seq))
+    then
+        return false, "bad_sequence"
     end
 
     if type(packet.payload) ~= "table" then
