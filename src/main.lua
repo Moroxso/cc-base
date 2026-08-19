@@ -5,6 +5,7 @@ local Screen = require("lib.gui.screen")
 local NetworkService = require("lib.net.service")
 local IPService = require("lib.net.ip_service")
 local DatagramService = require("lib.net.datagram_service")
+local StreamService = require("lib.net.stream_service")
 local Address = require("lib.net.address")
 
 local APP_TITLE = "BASE CONTROL SYSTEM"
@@ -14,6 +15,7 @@ local automation = Automation.new(AUTOMATION_PATH)
 local network = NetworkService.new()
 local ip = IPService.new()
 local datagrams = DatagramService.new()
+local streams = StreamService.new()
 
 local function waitForBack()
     while true do
@@ -488,5 +490,8 @@ parallel.waitForAny(
     end,
     function()
         datagrams:run()
+    end,
+    function()
+        streams:run()
     end
 )
