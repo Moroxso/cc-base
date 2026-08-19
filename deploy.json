@@ -1,5 +1,5 @@
 {
-  "version": "0.12.0",
+  "version": "0.12.1",
   "files": [
     {
       "source": "src/startup.lua",
@@ -44,6 +44,10 @@
     {
       "source": "src/lib/gui/tabbar.lua",
       "target": "lib/gui/tabbar.lua"
+    },
+    {
+      "source": "src/lib/input/key_repeat.lua",
+      "target": "lib/input/key_repeat.lua"
     },
     {
       "source": "src/apps/redstone.lua",
