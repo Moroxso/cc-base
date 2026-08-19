@@ -73,6 +73,8 @@ function Game:selectPiece(x, y)
         return false
     end
 
+    self.cursorX = x
+    self.cursorY = y
     self.selectedX = x
     self.selectedY = y
     self.legalMoves = Rules.generateLegalMoves(
@@ -109,6 +111,8 @@ function Game:finishMove(move, promotionKind)
     self.lastPromotion = promotionKind
     self.promotionPending = nil
     self.state.turn = Pieces.opposite(self.state.turn)
+    self.cursorX = move.toX
+    self.cursorY = move.toY
     self:clearSelection()
     self:evaluatePosition()
 
@@ -185,6 +189,41 @@ function Game:selectSquare(x, y)
     end
 
     return self:selectPiece(x, y)
+end
+
+function Game:clickSquare(x, y)
+    if self.promotionPending or self.status ~= "playing" then
+        return false
+    end
+
+    if not self.board:inBounds(x, y) then
+        return false
+    end
+
+    self.cursorX = x
+    self.cursorY = y
+
+    local piece = self.board:get(x, y)
+
+    -- Mouse clicks on one of the current player's pieces always select it
+    -- immediately. This keeps pointer interaction independent from the
+    -- keyboard cursor/ENTER workflow used as a fallback.
+    if piece and piece.color == self.state.turn then
+        return self:selectPiece(x, y)
+    end
+
+    if self.selectedX then
+        local move = self:findMoveTo(x, y)
+
+        if move then
+            return self:attemptMove(move)
+        end
+
+        self:clearSelection()
+        return true
+    end
+
+    return false
 end
 
 function Game:moveCursor(dx, dy)
