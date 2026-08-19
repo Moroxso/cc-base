@@ -1,5 +1,5 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "files": [
     {
       "source": "src/startup.lua",
@@ -20,6 +20,22 @@
     {
       "source": "src/games/breakout.lua",
       "target": "games/breakout.lua"
+    },
+    {
+      "source": "src/games/breakout/ball.lua",
+      "target": "games/breakout/ball.lua"
+    },
+    {
+      "source": "src/games/breakout/paddle.lua",
+      "target": "games/breakout/paddle.lua"
+    },
+    {
+      "source": "src/games/breakout/bricks.lua",
+      "target": "games/breakout/bricks.lua"
+    },
+    {
+      "source": "src/games/breakout/renderer.lua",
+      "target": "games/breakout/renderer.lua"
     }
   ]
 }
