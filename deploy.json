@@ -1,5 +1,5 @@
 {
-  "version": "0.14.0",
+  "version": "0.14.1",
   "files": [
     {
       "source": "src/startup.lua",
@@ -100,6 +100,10 @@
     {
       "source": "src/games/tetris/renderer.lua",
       "target": "games/tetris/renderer.lua"
+    },
+    {
+      "source": "src/games/tetris/storage.lua",
+      "target": "games/tetris/storage.lua"
     }
   ]
 }
