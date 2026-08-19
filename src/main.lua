@@ -3,12 +3,17 @@ local Runtime = require("lib.runtime")
 local Automation = require("lib.automation")
 local Screen = require("lib.gui.screen")
 local NetworkService = require("lib.net.service")
+local IPService = require("lib.net.ip_service")
+local DatagramService = require("lib.net.datagram_service")
+local Address = require("lib.net.address")
 
 local APP_TITLE = "BASE CONTROL SYSTEM"
 local AUTOMATION_PATH = "/data/automation.json"
 
 local automation = Automation.new(AUTOMATION_PATH)
 local network = NetworkService.new()
+local ip = IPService.new()
+local datagrams = DatagramService.new()
 
 local function waitForBack()
     while true do
@@ -108,6 +113,10 @@ local function showStatus()
         term.setTextColor(colors.orange)
         term.write("Network: NO OPEN MODEM")
     end
+
+    term.setCursorPos(4, 16)
+    term.setTextColor(colors.cyan)
+    term.write("CCIP: " .. tostring(Address.localAddress() or "UNAVAILABLE"))
 
     ui.resetColors(term)
     ui.drawFooter("LEFT / SHIFT - Back")
@@ -473,5 +482,11 @@ parallel.waitForAny(
     end,
     function()
         network:run()
+    end,
+    function()
+        ip:run()
+    end,
+    function()
+        datagrams:run()
     end
 )
