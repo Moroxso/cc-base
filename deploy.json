@@ -1,5 +1,5 @@
 {
-  "version": "0.18.0",
+  "version": "0.18.1",
   "files": [
     {"source":"src/startup.lua","target":"startup.lua"},
     {"source":"src/main.lua","target":"main.lua"},
