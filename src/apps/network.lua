@@ -18,7 +18,7 @@ if width < 48 or height < 18 then
 end
 
 local running = true
-local message = "Network Core + CCIP + CCDP diagnostics"
+local message = "Network Core + CCIP + CCDP + CCTP diagnostics"
 local peersData = Peers.load()
 local lastStatus = nil
 local localAddress = Address.localAddress() or "UNAVAILABLE"
@@ -173,6 +173,17 @@ local ccdpPingButton = Button.new({
     textColor = colors.white
 })
 
+local cctpPingButton = Button.new({
+    id = "cctp_ping",
+    label = "CCTP Echo",
+    x = 32,
+    y = 15,
+    width = math.max(15, width - 33),
+    height = 1,
+    backgroundColor = colors.lightBlue,
+    textColor = colors.black
+})
+
 local function refreshPeers()
     local selectedId = nil
     local selected = peerList:getSelectedItem()
@@ -217,7 +228,7 @@ local function drawHeader()
         term.write(string.rep(" ", width))
     end
 
-    local title = "NETWORK CORE / CCIP / CCDP"
+    local title = "NETWORK CORE / CC STACK"
     local x = math.max(1, math.floor((width - #title) / 2) + 1)
     term.setCursorPos(x, 2)
     term.write(title)
@@ -228,7 +239,7 @@ local function drawFooter()
     local footer = "LEFT ccdp RIGHT ccip ENTER core CTRL scan SHIFT back"
 
     if #footer > width then
-        footer = "LEFT ccdp RIGHT ccip ENTER ping CTRL scan SHIFT"
+        footer = "ARROWS peer ENTER core CTRL scan SHIFT back"
     end
 
     term.setBackgroundColor(colors.gray)
@@ -358,8 +369,10 @@ local function draw()
     local secureEnabled = selected ~= nil and selected.trusted == true
     ipPingButton:setEnabled(secureEnabled)
     ccdpPingButton:setEnabled(secureEnabled)
+    cctpPingButton:setEnabled(secureEnabled)
     ipPingButton:draw(term)
     ccdpPingButton:draw(term)
+    cctpPingButton:draw(term)
 
     if pending and pending.code then
         local localState = pending.localConfirmed and "YES" or "NO"
@@ -379,7 +392,7 @@ local function draw()
             2,
             16,
             width - 3,
-            "Trusted link: CCIP host + CCDP datagrams available.",
+            "Trusted link: CCIP + CCDP + reliable CCTP available.",
             colors.lime
         )
     else
@@ -454,6 +467,19 @@ local function ccdpPingSelected()
     message = "CCDP datagram echo sent to " .. address .. "..."
 end
 
+local function cctpPingSelected()
+    local peer = peerList:getSelectedItem()
+
+    if not peer or not peer.trusted then
+        message = "CCTP requires a trusted peer."
+        return
+    end
+
+    local address = peerAddress(peer)
+    os.queueEvent("ccbase_cctp_ping", address)
+    message = "CCTP handshake + reliable echo to " .. address .. "..."
+end
+
 local function pairSelected()
     local peer = peerList:getSelectedItem()
 
@@ -513,6 +539,9 @@ local function uiLoop()
                 redraw = true
             elseif ccdpPingButton:contains(b, c) and ccdpPingButton.enabled then
                 ccdpPingSelected()
+                redraw = true
+            elseif cctpPingButton:contains(b, c) and cctpPingButton.enabled then
+                cctpPingSelected()
                 redraw = true
             elseif backButton:contains(b, c) then
                 running = false
@@ -593,6 +622,26 @@ local function uiLoop()
 
         elseif event == "ccbase_ccdp_ping_failed" then
             message = "CCDP echo timeout/failure: " .. tostring(b)
+            redraw = true
+
+        elseif event == "ccbase_cctp_pong" then
+            message = string.format(
+                "CCTP reliable echo from %s: %sms",
+                tostring(a),
+                tostring(b)
+            )
+            redraw = true
+
+        elseif event == "ccbase_cctp_ping_started" then
+            if b then
+                message = "CCTP SYN queued for " .. tostring(a)
+            else
+                message = "CCTP connect failed: " .. tostring(c)
+            end
+            redraw = true
+
+        elseif event == "ccbase_cctp_ping_failed" then
+            message = "CCTP timeout/failure: " .. tostring(b)
             redraw = true
 
         elseif event == "ccbase_net_scan_started" then
