@@ -1,126 +1,18 @@
 local ui = require("lib.ui")
 
-local selected = 1
+local APP_TITLE = "BASE CONTROL SYSTEM"
 
-local menuItems = {
+local mainItems = {
     "System status",
     "Hello",
+    "Games",
     "Reboot",
     "Shutdown"
 }
 
-ui.clear()
-
-ui.centerText(
-    term,
-    5,
-    "MODULE TEST",
-    colors.lime
-)
-
-sleep(2)
-
-local function resetColors()
-    term.setBackgroundColor(colors.black)
-    term.setTextColor(colors.white)
-end
-
-local function centerText(y, text, textColor, backgroundColor)
-    local width = term.getSize()
-
-    term.setCursorPos(
-        math.floor((width - #text) / 2) + 1,
-        y
-    )
-
-    if backgroundColor then
-        term.setBackgroundColor(backgroundColor)
-    end
-
-    if textColor then
-        term.setTextColor(textColor)
-    end
-
-    term.write(text)
-end
-
-local function drawHeader()
-    resetColors()
-    term.clear()
-
-    local width = term.getSize()
-
-    term.setBackgroundColor(colors.blue)
-
-    for y = 1, 3 do
-        term.setCursorPos(1, y)
-        term.write(string.rep(" ", width))
-    end
-
-    centerText(
-        2,
-        "BASE CONTROL SYSTEM",
-        colors.white,
-        colors.blue
-    )
-
-    resetColors()
-end
-
-local function drawFooter(text)
-    local width, height = term.getSize()
-
-    term.setBackgroundColor(colors.gray)
-    term.setTextColor(colors.white)
-
-    term.setCursorPos(1, height)
-    term.write(string.rep(" ", width))
-
-    centerText(
-        height,
-        text,
-        colors.white,
-        colors.gray
-    )
-
-    resetColors()
-end
-
-local function drawMenu()
-    drawHeader()
-
-    centerText(
-        5,
-        "MAIN MENU",
-        colors.lightGray
-    )
-
-    for i, item in ipairs(menuItems) do
-        local y = 6 + i * 2
-
-        if i == selected then
-            term.setBackgroundColor(colors.white)
-            term.setTextColor(colors.black)
-
-            term.setCursorPos(5, y)
-            term.write(" > " .. item .. " ")
-
-            resetColors()
-        else
-            term.setCursorPos(7, y)
-            term.setTextColor(colors.lightGray)
-            term.write(item)
-
-            resetColors()
-        end
-    end
-
-    drawFooter("UP/DOWN  ENTER  ESC")
-end
-
 local function waitForBack()
     while true do
-        local event, key = os.pullEvent("key")
+        local _, key = os.pullEvent("key")
 
         if key == keys.left then
             return
@@ -128,10 +20,64 @@ local function waitForBack()
     end
 end
 
-local function showStatus()
-    drawHeader()
+local function readVersion()
+    local path = "/.project-version"
 
-    centerText(
+    if not fs.exists(path) then
+        return "unknown"
+    end
+
+    local file = fs.open(path, "r")
+
+    if not file then
+        return "unknown"
+    end
+
+    local version = file.readAll()
+    file.close()
+
+    if version == "" then
+        return "unknown"
+    end
+
+    return version
+end
+
+local function drawSelectionMenu(title, items, selected, footer)
+    ui.drawHeader(APP_TITLE)
+
+    ui.centerText(
+        term,
+        5,
+        title,
+        colors.lightGray
+    )
+
+    for i, item in ipairs(items) do
+        local y = 6 + i * 2
+
+        if i == selected then
+            term.setBackgroundColor(colors.white)
+            term.setTextColor(colors.black)
+            term.setCursorPos(5, y)
+            term.write(" > " .. item .. " ")
+        else
+            term.setCursorPos(7, y)
+            term.setTextColor(colors.lightGray)
+            term.write(item)
+        end
+
+        ui.resetColors(term)
+    end
+
+    ui.drawFooter(footer)
+end
+
+local function showStatus()
+    ui.drawHeader(APP_TITLE)
+
+    ui.centerText(
+        term,
         5,
         "SYSTEM STATUS",
         colors.cyan
@@ -141,131 +87,211 @@ local function showStatus()
     term.setTextColor(colors.lime)
     term.write("STATUS: ONLINE")
 
-    resetColors()
+    ui.resetColors(term)
 
     term.setCursorPos(4, 10)
-    term.write(
-        "Computer ID: " ..
-        os.getComputerID()
-    )
+    term.write("Computer ID: " .. os.getComputerID())
 
     local label = os.getComputerLabel()
 
     term.setCursorPos(4, 11)
-
-    if label then
-        term.write("Computer name: " .. label)
-    else
-        term.write("Computer name: NOT SET")
-    end
+    term.write("Computer name: " .. (label or "NOT SET"))
 
     local width, height = term.getSize()
 
-    term.setCursorPos(4, 13)
-    term.write(
-        "Terminal: " ..
-        width ..
-        "x" ..
-        height
-    )
+    term.setCursorPos(4, 12)
+    term.write("Terminal: " .. width .. "x" .. height)
 
-    drawFooter("LEFT - Back")
+    term.setCursorPos(4, 13)
+    term.write("Version: " .. readVersion())
+
+    term.setCursorPos(4, 14)
+
+    if http then
+        term.setTextColor(colors.lime)
+        term.write("HTTP API: AVAILABLE")
+    else
+        term.setTextColor(colors.red)
+        term.write("HTTP API: UNAVAILABLE")
+    end
+
+    ui.resetColors(term)
+    ui.drawFooter("LEFT - Back")
 
     waitForBack()
 end
 
 local function showHello()
-    drawHeader()
+    ui.drawHeader(APP_TITLE)
 
-    centerText(
+    ui.centerText(
+        term,
         8,
         "Hello!",
         colors.lime
     )
 
-    centerText(
+    ui.centerText(
+        term,
         10,
-        "BASE_MAIN is online.",
+        (os.getComputerLabel() or "Computer") .. " is online.",
         colors.white
     )
 
-    drawFooter("LEFT - Back")
+    ui.drawFooter("LEFT - Back")
 
     waitForBack()
 end
 
-local function rebootComputer()
-    drawHeader()
+local function showProgramError(name)
+    ui.drawHeader(APP_TITLE)
 
-    centerText(
+    ui.centerText(
+        term,
+        7,
+        "PROGRAM ERROR",
+        colors.red
+    )
+
+    ui.centerText(
+        term,
+        9,
+        name .. " failed to start.",
+        colors.white
+    )
+
+    ui.drawFooter("LEFT - Back")
+    waitForBack()
+end
+
+local function runProgram(name, path)
+    ui.clear(term)
+
+    local ok = shell.run(path)
+
+    if not ok then
+        showProgramError(name)
+    end
+end
+
+local function showGames()
+    local selected = 1
+
+    local gameItems = {
+        "Breakout",
+        "Back"
+    }
+
+    while true do
+        drawSelectionMenu(
+            "GAMES",
+            gameItems,
+            selected,
+            "UP/DOWN  ENTER  LEFT"
+        )
+
+        local _, key = os.pullEvent("key")
+
+        if key == keys.up then
+            selected = selected - 1
+
+            if selected < 1 then
+                selected = #gameItems
+            end
+
+        elseif key == keys.down then
+            selected = selected + 1
+
+            if selected > #gameItems then
+                selected = 1
+            end
+
+        elseif key == keys.enter then
+            if selected == 1 then
+                runProgram(
+                    "Breakout",
+                    "/games/breakout.lua"
+                )
+            elseif selected == 2 then
+                return
+            end
+
+        elseif key == keys.left then
+            return
+        end
+    end
+end
+
+local function rebootComputer()
+    ui.drawHeader(APP_TITLE)
+
+    ui.centerText(
+        term,
         8,
         "REBOOTING...",
         colors.orange
     )
 
     sleep(1)
-
     os.reboot()
 end
 
 local function shutdownComputer()
-    drawHeader()
+    ui.drawHeader(APP_TITLE)
 
-    centerText(
+    ui.centerText(
+        term,
         8,
         "SHUTTING DOWN...",
         colors.red
     )
 
     sleep(1)
-
     os.shutdown()
 end
 
-while true do
-    drawMenu()
+local selected = 1
 
-    local event, key = os.pullEvent("key")
+while true do
+    drawSelectionMenu(
+        "MAIN MENU",
+        mainItems,
+        selected,
+        "UP/DOWN  ENTER  LEFT"
+    )
+
+    local _, key = os.pullEvent("key")
 
     if key == keys.up then
-
         selected = selected - 1
 
         if selected < 1 then
-            selected = #menuItems
+            selected = #mainItems
         end
 
     elseif key == keys.down then
-
         selected = selected + 1
 
-        if selected > #menuItems then
+        if selected > #mainItems then
             selected = 1
         end
 
     elseif key == keys.enter then
-
         if selected == 1 then
             showStatus()
-
         elseif selected == 2 then
             showHello()
-
         elseif selected == 3 then
-            rebootComputer()
-
+            showGames()
         elseif selected == 4 then
+            rebootComputer()
+        elseif selected == 5 then
             shutdownComputer()
         end
 
     elseif key == keys.left then
-
-        resetColors()
-        term.clear()
-        term.setCursorPos(1, 1)
-
-        print("BASE CONTROL SYSTEM closed.")
-
+        ui.clear(term)
+        print(APP_TITLE .. " closed.")
         break
     end
 end
