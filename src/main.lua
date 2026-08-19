@@ -245,7 +245,7 @@ while true do
             shutdownComputer()
         end
 
-    elseif key == keys.escape then
+    elseif key == keys.left then
 
         resetColors()
         term.clear()
