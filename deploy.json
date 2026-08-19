@@ -1,5 +1,5 @@
 {
-  "version": "0.16.2",
+  "version": "0.17.0",
   "files": [
     {"source":"src/startup.lua","target":"startup.lua"},
     {"source":"src/main.lua","target":"main.lua"},
@@ -20,6 +20,9 @@
     {"source":"src/lib/net/router.lua","target":"lib/net/router.lua"},
     {"source":"src/lib/net/pairing.lua","target":"lib/net/pairing.lua"},
     {"source":"src/lib/net/service.lua","target":"lib/net/service.lua"},
+    {"source":"src/lib/net/address.lua","target":"lib/net/address.lua"},
+    {"source":"src/lib/net/ccip.lua","target":"lib/net/ccip.lua"},
+    {"source":"src/lib/net/ip_service.lua","target":"lib/net/ip_service.lua"},
     {"source":"src/apps/redstone.lua","target":"apps/redstone.lua"},
     {"source":"src/apps/automation.lua","target":"apps/automation.lua"},
     {"source":"src/apps/network.lua","target":"apps/network.lua"},
