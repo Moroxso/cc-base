@@ -1,5 +1,5 @@
 {
-  "version": "0.13.0",
+  "version": "0.14.0",
   "files": [
     {
       "source": "src/startup.lua",
@@ -80,6 +80,26 @@
     {
       "source": "src/games/breakout/renderer.lua",
       "target": "games/breakout/renderer.lua"
+    },
+    {
+      "source": "src/games/tetris.lua",
+      "target": "games/tetris.lua"
+    },
+    {
+      "source": "src/games/tetris/board.lua",
+      "target": "games/tetris/board.lua"
+    },
+    {
+      "source": "src/games/tetris/game.lua",
+      "target": "games/tetris/game.lua"
+    },
+    {
+      "source": "src/games/tetris/pieces.lua",
+      "target": "games/tetris/pieces.lua"
+    },
+    {
+      "source": "src/games/tetris/renderer.lua",
+      "target": "games/tetris/renderer.lua"
     }
   ]
 }
