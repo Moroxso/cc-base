@@ -104,4 +104,19 @@ function Pieces.randomKind()
     return order[math.random(1, #order)]
 end
 
+function Pieces.createBag()
+    local bag = {}
+
+    for i, kind in ipairs(order) do
+        bag[i] = kind
+    end
+
+    for i = #bag, 2, -1 do
+        local j = math.random(1, i)
+        bag[i], bag[j] = bag[j], bag[i]
+    end
+
+    return bag
+end
+
 return Pieces
