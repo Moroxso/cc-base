@@ -1,5 +1,5 @@
 {
-  "version": "0.7.1",
+  "version": "0.8.0",
   "files": [
     {
       "source": "src/startup.lua",
@@ -16,6 +16,10 @@
     {
       "source": "src/lib/ui.lua",
       "target": "lib/ui.lua"
+    },
+    {
+      "source": "src/lib/runtime.lua",
+      "target": "lib/runtime.lua"
     },
     {
       "source": "src/lib/automation.lua",
