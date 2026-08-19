@@ -98,6 +98,7 @@ end
 
 local routesButton = button("routes", "Routing", 2, 13, 12, colors.brown)
 local firewallButton = button("firewall", "Firewall", 15, 13, 12, colors.red)
+local securityButton = button("security", "Security", 28, 13, 12, colors.orange, colors.black)
 local scanButton = button("scan", "Scan", 2, 14, 10, colors.blue)
 local pingButton = button("ping", "Ping", 13, 14, 10, colors.green, colors.black)
 local pairButton = button("pair", "Pair", 24, 14, 13, colors.orange, colors.black)
@@ -228,6 +229,7 @@ local function draw()
 
     routesButton:draw(term)
     firewallButton:draw(term)
+    securityButton:draw(term)
     scanButton:draw(term)
     pingButton:setEnabled(peer ~= nil)
     pingButton:draw(term)
@@ -251,7 +253,7 @@ local function draw()
             colors.yellow
         )
     elseif secure then
-        line(16, "Trusted CC stack link. Routing + firewall available.", colors.lime)
+        line(16, "Trusted CC stack link. Routing + firewall + integrity available.", colors.lime)
     else
         line(16, message, colors.lightGray)
     end
@@ -319,6 +321,11 @@ local function openFirewall()
     message = ok and "Firewall controls closed." or ("Firewall UI error: " .. tostring(err))
 end
 
+local function openSecurity()
+    local ok, err = Runtime.run("/apps/security.lua")
+    message = ok and "Security controls closed." or ("Security UI error: " .. tostring(err))
+end
+
 local refreshTimer = os.startTimer(0.5)
 draw()
 
@@ -331,6 +338,7 @@ while running do
         if index then peerList:setSelected(index) redraw = true
         elseif routesButton:contains(b, c) then openRouting() redraw = true
         elseif firewallButton:contains(b, c) then openFirewall() redraw = true
+        elseif securityButton:contains(b, c) then openSecurity() redraw = true
         elseif scanButton:contains(b, c) then scan() redraw = true
         elseif pingButton:contains(b, c) then corePing() redraw = true
         elseif pairButton:contains(b, c) and pairButton.enabled then pairAction() redraw = true
@@ -369,6 +377,9 @@ while running do
         redraw = true
     elseif event == "ccbase_firewall_changed" then
         message = "Firewall policy updated."
+        redraw = true
+    elseif event == "ccbase_security_state" then
+        message = a and "Integrity state: CLEAN" or ("Integrity ALERT: " .. tostring(b) .. " issue(s)")
         redraw = true
     elseif event == "ccbase_net_scan_started" then
         message = a and "Discovery broadcast sent." or "Scan failed: no open modem." redraw = true
