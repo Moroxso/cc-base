@@ -527,10 +527,10 @@ while running do
         redraw = true
 
     elseif event == "ccbase_net_pair_action" then
-        if d then
+        if c then
             message = "Pair action accepted for #" .. tostring(a) .. "."
         else
-            message = "Pair action failed: " .. tostring(c)
+            message = "Pair action failed: " .. tostring(d)
         end
         redraw = true
 
