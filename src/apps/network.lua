@@ -3,6 +3,8 @@ local List = require("lib.gui.list")
 local Protocol = require("lib.net.protocol")
 local Transport = require("lib.net.transport")
 local Peers = require("lib.net.peers")
+local Address = require("lib.net.address")
+local IPService = require("lib.net.ip_service")
 
 local STATUS_PATH = "/data/network/status.json"
 
@@ -17,9 +19,11 @@ if width < 48 or height < 18 then
 end
 
 local running = true
-local message = "Network Core diagnostics"
+local message = "Network Core + CCIP diagnostics"
 local peersData = Peers.load()
 local lastStatus = nil
+local ipService = IPService.new()
+local localAddress = Address.localAddress() or "UNAVAILABLE"
 
 local function resetColors()
     term.setBackgroundColor(colors.black)
@@ -70,9 +74,11 @@ local function serviceOnline(status)
     end
 
     local updatedAt = tonumber(status.updatedAt) or 0
-    local age = math.max(0, Protocol.nowMs() - updatedAt)
+    return math.max(0, Protocol.nowMs() - updatedAt) <= 5000
+end
 
-    return age <= 5000
+local function peerAddress(peer)
+    return Address.forComputer(peer.id) or "NO-IP"
 end
 
 local function peerLabel(peer)
@@ -147,6 +153,17 @@ local backButton = Button.new({
     textColor = colors.white
 })
 
+local ipPingButton = Button.new({
+    id = "ip_ping",
+    label = "CCIP Ping",
+    x = 13,
+    y = 15,
+    width = 14,
+    height = 1,
+    backgroundColor = colors.cyan,
+    textColor = colors.black
+})
+
 local function refreshPeers()
     local selectedId = nil
     local selected = peerList:getSelectedItem()
@@ -191,7 +208,7 @@ local function drawHeader()
         term.write(string.rep(" ", width))
     end
 
-    local title = "NETWORK CORE"
+    local title = "NETWORK CORE / CCIP"
     local x = math.max(1, math.floor((width - #title) / 2) + 1)
     term.setCursorPos(x, 2)
     term.write(title)
@@ -199,10 +216,10 @@ local function drawHeader()
 end
 
 local function drawFooter()
-    local footer = "MOUSE  ARROWS peer  ENTER ping  CTRL scan  SHIFT back"
+    local footer = "MOUSE  ARROWS peer  ENTER ping  RIGHT ip  CTRL scan  SHIFT"
 
     if #footer > width then
-        footer = "MOUSE  ARROWS  ENTER ping  CTRL scan  SHIFT"
+        footer = "MOUSE ARROWS ENTER ping RIGHT ip CTRL scan SHIFT"
     end
 
     term.setBackgroundColor(colors.gray)
@@ -253,7 +270,6 @@ local function draw()
     resetColors()
     term.clear()
     term.setCursorPos(1, 1)
-
     drawHeader()
 
     local status = readStatus()
@@ -267,9 +283,10 @@ local function draw()
         4,
         width - 3,
         string.format(
-            "ID #%d  %s",
+            "ID #%d  %s  CCIP %s",
             os.getComputerID(),
-            os.getComputerLabel() or "UNNAMED"
+            os.getComputerLabel() or "UNNAMED",
+            localAddress
         ),
         colors.cyan
     )
@@ -310,10 +327,10 @@ local function draw()
             12,
             width - 3,
             string.format(
-                "Selected #%d | seen %ds | protocol v%d | %s",
+                "#%d %s | seen %ds | %s",
                 selected.id,
+                peerAddress(selected),
                 seenAge,
-                selected.protocolVersion or 0,
                 selected.trusted and "TRUSTED" or "UNTRUSTED"
             ),
             selected.trusted and colors.lime or colors.white
@@ -328,6 +345,9 @@ local function draw()
     configurePairButton(selected, pending)
     pairButton:draw(term)
     backButton:draw(term)
+
+    ipPingButton:setEnabled(selected ~= nil and selected.trusted == true)
+    ipPingButton:draw(term)
 
     if pending and pending.code then
         local localState = pending.localConfirmed and "YES" or "NO"
@@ -347,7 +367,7 @@ local function draw()
             2,
             16,
             width - 3,
-            "Trusted session active. Sequenced app packets enabled.",
+            "Trusted link: CCIP packets allowed to " .. peerAddress(selected),
             colors.lime
         )
     else
@@ -373,13 +393,7 @@ local function draw()
             colors.lightGray
         )
     else
-        writeLine(
-            2,
-            17,
-            width - 3,
-            message,
-            colors.gray
-        )
+        writeLine(2, 17, width - 3, message, colors.gray)
     end
 
     drawFooter()
@@ -399,7 +413,20 @@ local function pingSelected()
     end
 
     os.queueEvent("ccbase_net_ping", peer.id)
-    message = "Ping requested for #" .. tostring(peer.id) .. "..."
+    message = "Core ping requested for #" .. tostring(peer.id) .. "..."
+end
+
+local function ipPingSelected()
+    local peer = peerList:getSelectedItem()
+
+    if not peer or not peer.trusted then
+        message = "CCIP requires a trusted peer."
+        return
+    end
+
+    local address = peerAddress(peer)
+    os.queueEvent("ccbase_ip_ping", address)
+    message = "CCIP echo requested for " .. address .. "..."
 end
 
 local function pairSelected()
@@ -433,126 +460,152 @@ local function isPointerClick(button)
     return button == 1 or button == 0
 end
 
-local refreshTimer = os.startTimer(0.5)
+local function uiLoop()
+    local refreshTimer = os.startTimer(0.5)
+    draw()
 
-draw()
+    while running do
+        local event, a, b, c, d = os.pullEvent()
+        local redraw = false
 
-while running do
-    local event, a, b, c, d = os.pullEvent()
-    local redraw = false
+        if event == "mouse_click" and isPointerClick(a) then
+            local index = peerList:findAt(b, c)
 
-    if event == "mouse_click" and isPointerClick(a) then
-        local index = peerList:findAt(b, c)
+            if index then
+                peerList:setSelected(index)
+                redraw = true
+            elseif scanButton:contains(b, c) then
+                startScan()
+                redraw = true
+            elseif pingButton:contains(b, c) then
+                pingSelected()
+                redraw = true
+            elseif pairButton:contains(b, c) and pairButton.enabled then
+                pairSelected()
+                redraw = true
+            elseif ipPingButton:contains(b, c) and ipPingButton.enabled then
+                ipPingSelected()
+                redraw = true
+            elseif backButton:contains(b, c) then
+                running = false
+            end
 
-        if index then
-            peerList:setSelected(index)
+        elseif event == "key" then
+            if a == keys.up then
+                peerList:move(-1)
+                redraw = true
+            elseif a == keys.down then
+                peerList:move(1)
+                redraw = true
+            elseif a == keys.enter then
+                pingSelected()
+                redraw = true
+            elseif a == keys.right then
+                ipPingSelected()
+                redraw = true
+            elseif a == keys.leftCtrl then
+                startScan()
+                redraw = true
+            elseif a == keys.leftShift then
+                running = false
+            end
+
+        elseif event == "ccbase_net_peers_changed" then
+            refreshPeers()
+            message = "Peer registry updated."
             redraw = true
 
-        elseif scanButton:contains(b, c) then
-            startScan()
+        elseif event == "ccbase_net_pong" then
+            refreshPeers()
+            message = string.format(
+                "Core pong from #%s: %sms",
+                tostring(a),
+                tostring(b)
+            )
             redraw = true
 
-        elseif pingButton:contains(b, c) then
-            pingSelected()
+        elseif event == "ccbase_ip_pong" then
+            message = string.format(
+                "CCIP pong from %s: %sms",
+                tostring(a),
+                tostring(b)
+            )
             redraw = true
 
-        elseif pairButton:contains(b, c) and pairButton.enabled then
-            pairSelected()
+        elseif event == "ccbase_ip_ping_started" then
+            if b then
+                message = "CCIP packet sent to " .. tostring(a)
+            else
+                message = "CCIP ping failed: " .. tostring(c)
+            end
             redraw = true
 
-        elseif backButton:contains(b, c) then
-            running = false
+        elseif event == "ccbase_ip_ping_failed" then
+            message = "CCIP send failed: " .. tostring(b)
+            redraw = true
+
+        elseif event == "ccbase_net_scan_started" then
+            message = a and "Discovery broadcast sent." or "Scan failed: no open modem."
+            redraw = true
+
+        elseif event == "ccbase_net_ping_started" then
+            if b then
+                message = "Core ping sent to #" .. tostring(a)
+            else
+                message = "Core ping failed for #" .. tostring(a)
+            end
+            redraw = true
+
+        elseif event == "ccbase_net_pair_state" then
+            refreshPeers()
+
+            if b == "confirm_required" or b == "remote_confirmed" then
+                message = "Pairing with #" .. tostring(a) .. ": compare code " .. tostring(c)
+            elseif b == "trusted" then
+                message = "Computer #" .. tostring(a) .. " is now trusted."
+            elseif b == "expired" then
+                message = "Pairing with #" .. tostring(a) .. " expired."
+            elseif b == "untrusted" then
+                message = "Trust removed from #" .. tostring(a) .. "."
+            end
+
+            redraw = true
+
+        elseif event == "ccbase_net_pair_action" then
+            if c then
+                message = "Pair action accepted for #" .. tostring(a) .. "."
+            else
+                message = "Pair action failed: " .. tostring(d)
+            end
+            redraw = true
+
+        elseif event == "timer" and a == refreshTimer then
+            refreshPeers()
+            refreshTimer = os.startTimer(0.5)
+            redraw = true
+
+        elseif event == "term_resize" then
+            local newWidth, newHeight = term.getSize()
+
+            if newWidth < 48 or newHeight < 18 then
+                running = false
+            else
+                redraw = true
+            end
         end
 
-    elseif event == "key" then
-        if a == keys.up then
-            peerList:move(-1)
-            redraw = true
-
-        elseif a == keys.down then
-            peerList:move(1)
-            redraw = true
-
-        elseif a == keys.enter then
-            pingSelected()
-            redraw = true
-
-        elseif a == keys.leftCtrl then
-            startScan()
-            redraw = true
-
-        elseif a == keys.leftShift then
-            running = false
+        if redraw and running then
+            draw()
         end
-
-    elseif event == "ccbase_net_peers_changed" then
-        refreshPeers()
-        message = "Peer registry updated."
-        redraw = true
-
-    elseif event == "ccbase_net_pong" then
-        refreshPeers()
-        message = string.format(
-            "Pong from #%s: %sms",
-            tostring(a),
-            tostring(b)
-        )
-        redraw = true
-
-    elseif event == "ccbase_net_scan_started" then
-        message = a and "Discovery broadcast sent." or "Scan failed: no open modem."
-        redraw = true
-
-    elseif event == "ccbase_net_ping_started" then
-        if b then
-            message = "Ping sent to #" .. tostring(a)
-        else
-            message = "Ping failed for #" .. tostring(a)
-        end
-        redraw = true
-
-    elseif event == "ccbase_net_pair_state" then
-        refreshPeers()
-
-        if b == "confirm_required" or b == "remote_confirmed" then
-            message = "Pairing with #" .. tostring(a) .. ": compare code " .. tostring(c)
-        elseif b == "trusted" then
-            message = "Computer #" .. tostring(a) .. " is now trusted."
-        elseif b == "expired" then
-            message = "Pairing with #" .. tostring(a) .. " expired."
-        elseif b == "untrusted" then
-            message = "Trust removed from #" .. tostring(a) .. "."
-        end
-
-        redraw = true
-
-    elseif event == "ccbase_net_pair_action" then
-        if c then
-            message = "Pair action accepted for #" .. tostring(a) .. "."
-        else
-            message = "Pair action failed: " .. tostring(d)
-        end
-        redraw = true
-
-    elseif event == "timer" and a == refreshTimer then
-        refreshPeers()
-        refreshTimer = os.startTimer(0.5)
-        redraw = true
-
-    elseif event == "term_resize" then
-        local newWidth, newHeight = term.getSize()
-
-        if newWidth < 48 or newHeight < 18 then
-            running = false
-        else
-            redraw = true
-        end
-    end
-
-    if redraw and running then
-        draw()
     end
 end
+
+parallel.waitForAny(
+    uiLoop,
+    function()
+        ipService:run()
+    end
+)
 
 resetColors()
 term.clear()
