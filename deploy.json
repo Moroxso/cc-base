@@ -1,5 +1,5 @@
 {
-  "version": "0.10.0",
+  "version": "0.11.0",
   "files": [
     {
       "source": "src/startup.lua",
@@ -24,6 +24,14 @@
     {
       "source": "src/lib/automation.lua",
       "target": "lib/automation.lua"
+    },
+    {
+      "source": "src/lib/gui/button.lua",
+      "target": "lib/gui/button.lua"
+    },
+    {
+      "source": "src/lib/gui/screen.lua",
+      "target": "lib/gui/screen.lua"
     },
     {
       "source": "src/apps/redstone.lua",
