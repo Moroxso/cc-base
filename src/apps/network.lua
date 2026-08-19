@@ -1,5 +1,6 @@
 local Button = require("lib.gui.button")
 local List = require("lib.gui.list")
+local Runtime = require("lib.runtime")
 local Protocol = require("lib.net.protocol")
 local Transport = require("lib.net.transport")
 local Peers = require("lib.net.peers")
@@ -18,7 +19,7 @@ if width < 48 or height < 18 then
 end
 
 local running = true
-local message = "Network Core + CCIP + CCDP + CCTP diagnostics"
+local message = "Network Core / CC stack diagnostics"
 local peersData = Peers.load()
 local lastStatus = nil
 local localAddress = Address.localAddress() or "UNAVAILABLE"
@@ -80,7 +81,6 @@ local function peerAddress(peer)
 end
 
 local function peerLabel(peer)
-    local trust = peer.trusted and "T" or "?"
     local latency = ""
 
     if (peer.latencyMs or 0) > 0 then
@@ -89,7 +89,7 @@ local function peerLabel(peer)
 
     return string.format(
         "[%s] #%d %s%s",
-        trust,
+        peer.trusted and "T" or "?",
         peer.id,
         peer.label or ("Computer " .. tostring(peer.id)),
         latency
@@ -105,6 +105,17 @@ local peerList = List.new({
     getLabel = peerLabel,
     selectedBackgroundColor = colors.lightBlue,
     selectedTextColor = colors.black
+})
+
+local routesButton = Button.new({
+    id = "routes",
+    label = "Routing",
+    x = 2,
+    y = 13,
+    width = 12,
+    height = 1,
+    backgroundColor = colors.brown,
+    textColor = colors.white
 })
 
 local scanButton = Button.new({
@@ -185,12 +196,8 @@ local cctpPingButton = Button.new({
 })
 
 local function refreshPeers()
-    local selectedId = nil
     local selected = peerList:getSelectedItem()
-
-    if selected then
-        selectedId = selected.id
-    end
+    local selectedId = selected and selected.id or nil
 
     peersData = Peers.load()
     peerList:setItems(peersData.peers)
@@ -236,11 +243,7 @@ local function drawHeader()
 end
 
 local function drawFooter()
-    local footer = "LEFT ccdp RIGHT ccip ENTER core CTRL scan SHIFT back"
-
-    if #footer > width then
-        footer = "ARROWS peer ENTER core CTRL scan SHIFT back"
-    end
+    local footer = "MOUSE ARROWS ENTER core CTRL scan SHIFT back"
 
     term.setBackgroundColor(colors.gray)
     term.setTextColor(colors.white)
@@ -289,7 +292,6 @@ end
 local function draw()
     resetColors()
     term.clear()
-    term.setCursorPos(1, 1)
     drawHeader()
 
     local status = readStatus()
@@ -343,11 +345,11 @@ local function draw()
         )
 
         writeLine(
-            2,
-            12,
-            width - 3,
+            15,
+            13,
+            width - 16,
             string.format(
-                "#%d %s | seen %ds | %s",
+                "#%d %s | %ds | %s",
                 selected.id,
                 peerAddress(selected),
                 seenAge,
@@ -356,9 +358,10 @@ local function draw()
             selected.trusted and colors.lime or colors.white
         )
     else
-        writeLine(2, 12, width - 3, "No peer selected.", colors.lightGray)
+        writeLine(15, 13, width - 16, "No peer selected.", colors.lightGray)
     end
 
+    routesButton:draw(term)
     scanButton:draw(term)
     pingButton:setEnabled(selected ~= nil)
     pingButton:draw(term)
@@ -375,16 +378,13 @@ local function draw()
     cctpPingButton:draw(term)
 
     if pending and pending.code then
-        local localState = pending.localConfirmed and "YES" or "NO"
-        local remoteState = pending.remoteConfirmed and "YES" or "NO"
-
         writeLine(
             2,
             16,
             width - 3,
             "PAIR CODE: " .. tostring(pending.code) ..
-                "  LOCAL: " .. localState ..
-                "  REMOTE: " .. remoteState,
+                "  LOCAL: " .. (pending.localConfirmed and "YES" or "NO") ..
+                "  REMOTE: " .. (pending.remoteConfirmed and "YES" or "NO"),
             colors.yellow
         )
     elseif selected and selected.trusted then
@@ -392,7 +392,7 @@ local function draw()
             2,
             16,
             width - 3,
-            "Trusted link: CCIP + CCDP + reliable CCTP available.",
+            "Trusted CCIP / CCDP / CCTP link. Routing available.",
             colors.lime
         )
     else
@@ -402,21 +402,9 @@ local function draw()
     local lastError = status and status.lastError or ""
 
     if lastError ~= "" then
-        writeLine(
-            2,
-            17,
-            width - 3,
-            "CORE: " .. tostring(lastError),
-            colors.orange
-        )
+        writeLine(2, 17, width - 3, "CORE: " .. tostring(lastError), colors.orange)
     elseif pending and pending.code then
-        writeLine(
-            2,
-            17,
-            width - 3,
-            "Compare codes on BOTH computers, then Confirm on BOTH.",
-            colors.lightGray
-        )
+        writeLine(2, 17, width - 3, "Compare codes, then Confirm on BOTH computers.", colors.lightGray)
     else
         writeLine(2, 17, width - 3, message, colors.gray)
     end
@@ -424,13 +412,17 @@ local function draw()
     drawFooter()
 end
 
+local function selectedPeer()
+    return peerList:getSelectedItem()
+end
+
 local function startScan()
     os.queueEvent("ccbase_net_scan")
     message = "Discovery broadcast requested..."
 end
 
-local function pingSelected()
-    local peer = peerList:getSelectedItem()
+local function corePing()
+    local peer = selectedPeer()
 
     if not peer then
         message = "Select a peer first."
@@ -441,47 +433,29 @@ local function pingSelected()
     message = "Core ping requested for #" .. tostring(peer.id) .. "..."
 end
 
-local function ipPingSelected()
-    local peer = peerList:getSelectedItem()
+local function secureEcho(kind)
+    local peer = selectedPeer()
 
     if not peer or not peer.trusted then
-        message = "CCIP requires a trusted peer."
+        message = kind .. " requires a trusted peer."
         return
     end
 
     local address = peerAddress(peer)
-    os.queueEvent("ccbase_ip_ping", address)
-    message = "CCIP echo requested for " .. address .. "..."
-end
 
-local function ccdpPingSelected()
-    local peer = peerList:getSelectedItem()
-
-    if not peer or not peer.trusted then
-        message = "CCDP requires a trusted peer."
-        return
+    if kind == "CCIP" then
+        os.queueEvent("ccbase_ip_ping", address)
+    elseif kind == "CCDP" then
+        os.queueEvent("ccbase_ccdp_ping", address)
+    else
+        os.queueEvent("ccbase_cctp_ping", address)
     end
 
-    local address = peerAddress(peer)
-    os.queueEvent("ccbase_ccdp_ping", address)
-    message = "CCDP datagram echo sent to " .. address .. "..."
-end
-
-local function cctpPingSelected()
-    local peer = peerList:getSelectedItem()
-
-    if not peer or not peer.trusted then
-        message = "CCTP requires a trusted peer."
-        return
-    end
-
-    local address = peerAddress(peer)
-    os.queueEvent("ccbase_cctp_ping", address)
-    message = "CCTP handshake + reliable echo to " .. address .. "..."
+    message = kind .. " test queued for " .. address .. "..."
 end
 
 local function pairSelected()
-    local peer = peerList:getSelectedItem()
+    local peer = selectedPeer()
 
     if not peer then
         message = "Select a peer first."
@@ -507,200 +481,161 @@ local function pairSelected()
     end
 end
 
+local function openRouting()
+    local ok, err = Runtime.run("/apps/routing.lua")
+
+    if not ok then
+        message = "Routing UI error: " .. tostring(err)
+    else
+        message = "Routing controls closed."
+    end
+
+    refreshPeers()
+end
+
 local function isPointerClick(button)
     return button == 1 or button == 0
 end
 
-local function uiLoop()
-    local refreshTimer = os.startTimer(0.5)
-    draw()
+local refreshTimer = os.startTimer(0.5)
+draw()
 
-    while running do
-        local event, a, b, c, d = os.pullEvent()
-        local redraw = false
+while running do
+    local event, a, b, c, d = os.pullEvent()
+    local redraw = false
 
-        if event == "mouse_click" and isPointerClick(a) then
-            local index = peerList:findAt(b, c)
+    if event == "mouse_click" and isPointerClick(a) then
+        local index = peerList:findAt(b, c)
 
-            if index then
-                peerList:setSelected(index)
-                redraw = true
-            elseif scanButton:contains(b, c) then
-                startScan()
-                redraw = true
-            elseif pingButton:contains(b, c) then
-                pingSelected()
-                redraw = true
-            elseif pairButton:contains(b, c) and pairButton.enabled then
-                pairSelected()
-                redraw = true
-            elseif ipPingButton:contains(b, c) and ipPingButton.enabled then
-                ipPingSelected()
-                redraw = true
-            elseif ccdpPingButton:contains(b, c) and ccdpPingButton.enabled then
-                ccdpPingSelected()
-                redraw = true
-            elseif cctpPingButton:contains(b, c) and cctpPingButton.enabled then
-                cctpPingSelected()
-                redraw = true
-            elseif backButton:contains(b, c) then
-                running = false
-            end
-
-        elseif event == "key" then
-            if a == keys.up then
-                peerList:move(-1)
-                redraw = true
-            elseif a == keys.down then
-                peerList:move(1)
-                redraw = true
-            elseif a == keys.enter then
-                pingSelected()
-                redraw = true
-            elseif a == keys.right then
-                ipPingSelected()
-                redraw = true
-            elseif a == keys.left then
-                ccdpPingSelected()
-                redraw = true
-            elseif a == keys.leftCtrl then
-                startScan()
-                redraw = true
-            elseif a == keys.leftShift then
-                running = false
-            end
-
-        elseif event == "ccbase_net_peers_changed" then
-            refreshPeers()
-            message = "Peer registry updated."
+        if index then
+            peerList:setSelected(index)
             redraw = true
-
-        elseif event == "ccbase_net_pong" then
-            refreshPeers()
-            message = string.format(
-                "Core pong from #%s: %sms",
-                tostring(a),
-                tostring(b)
-            )
+        elseif routesButton:contains(b, c) then
+            openRouting()
             redraw = true
-
-        elseif event == "ccbase_ip_pong" then
-            message = string.format(
-                "CCIP pong from %s: %sms",
-                tostring(a),
-                tostring(b)
-            )
+        elseif scanButton:contains(b, c) then
+            startScan()
             redraw = true
-
-        elseif event == "ccbase_ip_ping_started" then
-            if b then
-                message = "CCIP packet sent to " .. tostring(a)
-            else
-                message = "CCIP ping failed: " .. tostring(c)
-            end
+        elseif pingButton:contains(b, c) then
+            corePing()
             redraw = true
-
-        elseif event == "ccbase_ip_ping_failed" then
-            message = "CCIP send failed: " .. tostring(b)
+        elseif pairButton:contains(b, c) and pairButton.enabled then
+            pairSelected()
             redraw = true
-
-        elseif event == "ccbase_ccdp_pong" then
-            message = string.format(
-                "CCDP echo from %s: %sms",
-                tostring(a),
-                tostring(b)
-            )
+        elseif ipPingButton:contains(b, c) and ipPingButton.enabled then
+            secureEcho("CCIP")
             redraw = true
-
-        elseif event == "ccbase_ccdp_ping_started" then
-            if b then
-                message = "CCDP datagram queued for " .. tostring(a)
-            else
-                message = "CCDP echo failed: " .. tostring(c)
-            end
+        elseif ccdpPingButton:contains(b, c) and ccdpPingButton.enabled then
+            secureEcho("CCDP")
             redraw = true
-
-        elseif event == "ccbase_ccdp_ping_failed" then
-            message = "CCDP echo timeout/failure: " .. tostring(b)
+        elseif cctpPingButton:contains(b, c) and cctpPingButton.enabled then
+            secureEcho("CCTP")
             redraw = true
-
-        elseif event == "ccbase_cctp_pong" then
-            message = string.format(
-                "CCTP reliable echo from %s: %sms",
-                tostring(a),
-                tostring(b)
-            )
-            redraw = true
-
-        elseif event == "ccbase_cctp_ping_started" then
-            if b then
-                message = "CCTP SYN queued for " .. tostring(a)
-            else
-                message = "CCTP connect failed: " .. tostring(c)
-            end
-            redraw = true
-
-        elseif event == "ccbase_cctp_ping_failed" then
-            message = "CCTP timeout/failure: " .. tostring(b)
-            redraw = true
-
-        elseif event == "ccbase_net_scan_started" then
-            message = a and "Discovery broadcast sent." or "Scan failed: no open modem."
-            redraw = true
-
-        elseif event == "ccbase_net_ping_started" then
-            if b then
-                message = "Core ping sent to #" .. tostring(a)
-            else
-                message = "Core ping failed for #" .. tostring(a)
-            end
-            redraw = true
-
-        elseif event == "ccbase_net_pair_state" then
-            refreshPeers()
-
-            if b == "confirm_required" or b == "remote_confirmed" then
-                message = "Pairing with #" .. tostring(a) .. ": compare code " .. tostring(c)
-            elseif b == "trusted" then
-                message = "Computer #" .. tostring(a) .. " is now trusted."
-            elseif b == "expired" then
-                message = "Pairing with #" .. tostring(a) .. " expired."
-            elseif b == "untrusted" then
-                message = "Trust removed from #" .. tostring(a) .. "."
-            end
-
-            redraw = true
-
-        elseif event == "ccbase_net_pair_action" then
-            if c then
-                message = "Pair action accepted for #" .. tostring(a) .. "."
-            else
-                message = "Pair action failed: " .. tostring(d)
-            end
-            redraw = true
-
-        elseif event == "timer" and a == refreshTimer then
-            refreshPeers()
-            refreshTimer = os.startTimer(0.5)
-            redraw = true
-
-        elseif event == "term_resize" then
-            local newWidth, newHeight = term.getSize()
-
-            if newWidth < 48 or newHeight < 18 then
-                running = false
-            else
-                redraw = true
-            end
+        elseif backButton:contains(b, c) then
+            running = false
         end
 
-        if redraw and running then
-            draw()
+    elseif event == "key" then
+        if a == keys.up then
+            peerList:move(-1)
+            redraw = true
+        elseif a == keys.down then
+            peerList:move(1)
+            redraw = true
+        elseif a == keys.enter then
+            corePing()
+            redraw = true
+        elseif a == keys.right then
+            secureEcho("CCIP")
+            redraw = true
+        elseif a == keys.left then
+            secureEcho("CCDP")
+            redraw = true
+        elseif a == keys.leftCtrl then
+            startScan()
+            redraw = true
+        elseif a == keys.leftShift then
+            running = false
+        end
+
+    elseif event == "ccbase_net_peers_changed" then
+        refreshPeers()
+        message = "Peer registry updated."
+        redraw = true
+
+    elseif event == "ccbase_net_pong" then
+        refreshPeers()
+        message = string.format("Core pong from #%s: %sms", tostring(a), tostring(b))
+        redraw = true
+
+    elseif event == "ccbase_ip_pong" then
+        message = string.format("CCIP pong from %s: %sms", tostring(a), tostring(b))
+        redraw = true
+
+    elseif event == "ccbase_ccdp_pong" then
+        message = string.format("CCDP echo from %s: %sms", tostring(a), tostring(b))
+        redraw = true
+
+    elseif event == "ccbase_cctp_pong" then
+        message = string.format(
+            "CCTP echo %s: %sms | win %s | RTO %sms",
+            tostring(a),
+            tostring(b),
+            tostring(e or "?"),
+            tostring(d or "?")
+        )
+        redraw = true
+
+    elseif event == "ccbase_ip_ping_failed" or
+        event == "ccbase_ccdp_ping_failed" or
+        event == "ccbase_cctp_ping_failed"
+    then
+        message = "Network test failed: " .. tostring(b)
+        redraw = true
+
+    elseif event == "ccbase_net_scan_started" then
+        message = a and "Discovery broadcast sent." or "Scan failed: no open modem."
+        redraw = true
+
+    elseif event == "ccbase_net_ping_started" then
+        message = b and ("Core ping sent to #" .. tostring(a)) or
+            ("Core ping failed for #" .. tostring(a))
+        redraw = true
+
+    elseif event == "ccbase_net_pair_state" then
+        refreshPeers()
+
+        if b == "confirm_required" or b == "remote_confirmed" then
+            message = "Pairing #" .. tostring(a) .. ": compare code " .. tostring(c)
+        elseif b == "trusted" then
+            message = "Computer #" .. tostring(a) .. " is now trusted."
+        elseif b == "expired" then
+            message = "Pairing with #" .. tostring(a) .. " expired."
+        elseif b == "untrusted" then
+            message = "Trust removed from #" .. tostring(a) .. "."
+        end
+
+        redraw = true
+
+    elseif event == "timer" and a == refreshTimer then
+        refreshPeers()
+        refreshTimer = os.startTimer(0.5)
+        redraw = true
+
+    elseif event == "term_resize" then
+        local newWidth, newHeight = term.getSize()
+
+        if newWidth < 48 or newHeight < 18 then
+            running = false
+        else
+            redraw = true
         end
     end
-end
 
-uiLoop()
+    if redraw and running then
+        draw()
+    end
+end
 
 resetColors()
 term.clear()
