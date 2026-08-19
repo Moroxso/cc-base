@@ -1,3 +1,5 @@
+local ui = require("lib.ui")
+
 local selected = 1
 
 local menuItems = {
@@ -6,6 +8,17 @@ local menuItems = {
     "Reboot",
     "Shutdown"
 }
+
+ui.clear()
+
+ui.centerText(
+    term,
+    5,
+    "MODULE TEST",
+    colors.lime
+)
+
+sleep(2)
 
 local function resetColors()
     term.setBackgroundColor(colors.black)

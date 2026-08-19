@@ -1,5 +1,5 @@
 {
-  "version": "0.1.1",
+  "version": "0.2.0",
   "files": [
     {
       "source": "src/startup.lua",
@@ -12,6 +12,10 @@
     {
       "source": "src/update.lua",
       "target": "update.lua"
+    },
+    {
+      "source": "src/lib/ui.lua",
+      "target": "lib/ui.lua"
     },
     {
       "source": "src/games/breakout.lua",
