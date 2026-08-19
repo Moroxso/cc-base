@@ -1,47 +1,61 @@
 local Renderer = {}
 Renderer.__index = Renderer
 
-function Renderer.new(monitor)
+function Renderer.new(display)
     local self = setmetatable({}, Renderer)
 
-    self.monitor = monitor
-    self.width, self.height = monitor.getSize()
+    self.display = display
+    self.width, self.height = display.getSize()
+    self.color = not display.isColor or display.isColor()
 
     return self
 end
 
+function Renderer:setTextColor(color)
+    if self.color then
+        self.display.setTextColor(color)
+    else
+        self.display.setTextColor(colors.white)
+    end
+end
+
 function Renderer:centerText(y, text, color)
-    self.monitor.setTextColor(color or colors.white)
+    self:setTextColor(color or colors.white)
 
     local x = math.floor(
         (self.width - #text) / 2
     ) + 1
 
-    self.monitor.setCursorPos(x, y)
-    self.monitor.write(text)
+    if x < 1 then
+        x = 1
+    end
+
+    self.display.setCursorPos(x, y)
+    self.display.write(text)
 end
 
 function Renderer:drawHUD(score, lives)
-    self.monitor.setTextColor(colors.yellow)
-    self.monitor.setCursorPos(2, 1)
-    self.monitor.write("SCORE: " .. tostring(score))
+    self:setTextColor(colors.yellow)
+    self.display.setCursorPos(2, 1)
+    self.display.write("SCORE: " .. tostring(score))
 
     local livesText = "LIVES: " .. tostring(lives)
+    local livesX = self.width - #livesText
 
-    self.monitor.setCursorPos(
-        self.width - #livesText,
-        1
-    )
+    if livesX < 1 then
+        livesX = 1
+    end
 
-    self.monitor.write(livesText)
+    self.display.setCursorPos(livesX, 1)
+    self.display.write(livesText)
 end
 
 function Renderer:drawBricks(bricks)
     for _, brick in ipairs(bricks.items) do
         if brick.alive then
-            self.monitor.setTextColor(brick.color)
-            self.monitor.setCursorPos(brick.x, brick.y)
-            self.monitor.write(
+            self:setTextColor(brick.color)
+            self.display.setCursorPos(brick.x, brick.y)
+            self.display.write(
                 string.rep("#", brick.width)
             )
         end
@@ -49,23 +63,23 @@ function Renderer:drawBricks(bricks)
 end
 
 function Renderer:drawPaddle(paddle)
-    self.monitor.setTextColor(colors.lime)
-    self.monitor.setCursorPos(paddle.x, paddle.y)
-    self.monitor.write(
+    self:setTextColor(colors.lime)
+    self.display.setCursorPos(paddle.x, paddle.y)
+    self.display.write(
         string.rep("=", paddle.width)
     )
 end
 
 function Renderer:drawBall(ball)
-    self.monitor.setTextColor(colors.white)
-    self.monitor.setCursorPos(ball.x, ball.y)
-    self.monitor.write("O")
+    self:setTextColor(colors.white)
+    self.display.setCursorPos(ball.x, ball.y)
+    self.display.write("O")
 end
 
 function Renderer:draw(score, lives, paused, ball, paddle, bricks)
-    self.monitor.setBackgroundColor(colors.black)
-    self.monitor.setTextColor(colors.white)
-    self.monitor.clear()
+    self.display.setBackgroundColor(colors.black)
+    self:setTextColor(colors.white)
+    self.display.clear()
 
     self:drawHUD(score, lives)
     self:drawBricks(bricks)
@@ -82,8 +96,8 @@ function Renderer:draw(score, lives, paused, ball, paddle, bricks)
 end
 
 function Renderer:showResult(result, score)
-    self.monitor.setBackgroundColor(colors.black)
-    self.monitor.clear()
+    self.display.setBackgroundColor(colors.black)
+    self.display.clear()
 
     if result == "win" then
         self:centerText(
@@ -109,9 +123,10 @@ function Renderer:showResult(result, score)
 end
 
 function Renderer:clear()
-    self.monitor.setBackgroundColor(colors.black)
-    self.monitor.setTextColor(colors.white)
-    self.monitor.clear()
+    self.display.setBackgroundColor(colors.black)
+    self:setTextColor(colors.white)
+    self.display.clear()
+    self.display.setCursorPos(1, 1)
 end
 
 return Renderer
