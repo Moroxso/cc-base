@@ -6,6 +6,7 @@ local mainItems = {
     "System status",
     "Hello",
     "Games",
+    "Redstone",
     "Reboot",
     "Shutdown"
 }
@@ -284,8 +285,13 @@ while true do
         elseif selected == 3 then
             showGames()
         elseif selected == 4 then
-            rebootComputer()
+            runProgram(
+                "Redstone Control",
+                "/apps/redstone.lua"
+            )
         elseif selected == 5 then
+            rebootComputer()
+        elseif selected == 6 then
             shutdownComputer()
         end
 
