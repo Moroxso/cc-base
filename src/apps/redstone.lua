@@ -1,6 +1,7 @@
 local Button = require("lib.gui.button")
 local Toggle = require("lib.gui.toggle")
 local Slider = require("lib.gui.slider")
+local KeyRepeat = require("lib.input.key_repeat")
 
 local sides = {
     "left",
@@ -12,6 +13,15 @@ local sides = {
 }
 
 local selected = 1
+
+local keyRepeat = KeyRepeat.new({
+    keys = {
+        keys.left,
+        keys.right
+    },
+    initialDelay = 0.35,
+    repeatDelay = 0.08
+})
 
 local function resetColors()
     term.setBackgroundColor(colors.black)
@@ -66,7 +76,7 @@ end
 
 local function drawFooter()
     local width, height = term.getSize()
-    local text = "MOUSE  UP/DOWN side  LEFT/RIGHT level  ENTER toggle  SHIFT back"
+    local text = "MOUSE  UP/DOWN side  HOLD LEFT/RIGHT level  ENTER toggle  SHIFT back"
 
     term.setBackgroundColor(colors.gray)
     term.setTextColor(colors.white)
@@ -188,6 +198,20 @@ local function setOutput(layout, value)
 
     redstone.setAnalogOutput(side, value)
     syncControls(layout)
+end
+
+local function adjustOutput(layout, key)
+    local current = redstone.getAnalogOutput(sides[selected])
+
+    if key == keys.left then
+        setOutput(layout, current - 1)
+        return true
+    elseif key == keys.right then
+        setOutput(layout, current + 1)
+        return true
+    end
+
+    return false
 end
 
 local function toggleOutput(layout)
@@ -336,8 +360,12 @@ local refreshTimer = os.startTimer(0.25)
 while true do
     local event, a, b, c = os.pullEvent()
     local redraw = false
+    local repeatedKey = keyRepeat:handleEvent(event, a)
 
-    if event == "term_resize" then
+    if repeatedKey then
+        redraw = adjustOutput(layout, repeatedKey)
+
+    elseif event == "term_resize" then
         layout, layoutError = createLayout()
 
         if not layout then
@@ -371,15 +399,8 @@ while true do
             selectSide(layout, selected)
             redraw = true
 
-        elseif key == keys.left then
-            local current = redstone.getAnalogOutput(sides[selected])
-            setOutput(layout, current - 1)
-            redraw = true
-
-        elseif key == keys.right then
-            local current = redstone.getAnalogOutput(sides[selected])
-            setOutput(layout, current + 1)
-            redraw = true
+        elseif key == keys.left or key == keys.right then
+            redraw = adjustOutput(layout, key)
 
         elseif key == keys.enter then
             toggleOutput(layout)
@@ -405,5 +426,6 @@ while true do
     end
 end
 
+keyRepeat:cancel()
 clear()
 print("Redstone Control closed.")
