@@ -2,6 +2,7 @@ local Automation = {}
 Automation.__index = Automation
 
 local DEFAULT_PATH = "/data/automation.json"
+local CONFIG_VERSION = 2
 
 local VALID_SIDES = {
     left = true,
@@ -12,9 +13,18 @@ local VALID_SIDES = {
     bottom = true
 }
 
+local VALID_OPERATORS = {
+    [">="] = true,
+    [">"] = true,
+    ["<="] = true,
+    ["<"] = true,
+    ["=="] = true,
+    ["!="] = true
+}
+
 local function copyDefault()
     return {
-        version = 1,
+        version = CONFIG_VERSION,
         enabled = true,
         rules = {}
     }
@@ -41,6 +51,34 @@ local function clampLevel(value)
     return value
 end
 
+local function normalizeOperator(value)
+    value = tostring(value or ">=")
+
+    if VALID_OPERATORS[value] then
+        return value
+    end
+
+    return ">="
+end
+
+local function compare(input, operator, threshold)
+    if operator == ">=" then
+        return input >= threshold
+    elseif operator == ">" then
+        return input > threshold
+    elseif operator == "<=" then
+        return input <= threshold
+    elseif operator == "<" then
+        return input < threshold
+    elseif operator == "==" then
+        return input == threshold
+    elseif operator == "!=" then
+        return input ~= threshold
+    end
+
+    return false
+end
+
 local function normalizeRule(rule, index)
     if type(rule) ~= "table" then
         return nil
@@ -56,6 +94,7 @@ local function normalizeRule(rule, index)
 
     local threshold = clampLevel(rule.threshold)
     local outputValue = clampLevel(rule.outputValue)
+    local operator = normalizeOperator(rule.operator)
 
     return {
         name = tostring(
@@ -64,6 +103,7 @@ local function normalizeRule(rule, index)
         ),
         enabled = rule.enabled ~= false,
         inputSide = rule.inputSide,
+        operator = operator,
         threshold = threshold,
         outputSide = rule.outputSide,
         outputValue = outputValue
@@ -96,7 +136,7 @@ function Automation.loadConfig(path)
     end
 
     local normalized = {
-        version = 1,
+        version = CONFIG_VERSION,
         enabled = config.enabled ~= false,
         rules = {}
     }
@@ -120,6 +160,8 @@ end
 function Automation.saveConfig(path, config)
     path = path or DEFAULT_PATH
     config = config or copyDefault()
+
+    config.version = CONFIG_VERSION
 
     ensureParent(path)
 
@@ -177,7 +219,11 @@ function Automation:evaluate()
                     rule.inputSide
                 )
 
-                if input >= rule.threshold then
+                if compare(
+                    input,
+                    rule.operator,
+                    rule.threshold
+                ) then
                     desired[rule.outputSide] = math.max(
                         desired[rule.outputSide],
                         rule.outputValue
