@@ -41,44 +41,6 @@ local function readVersion()
     return version
 end
 
-local function drawSelectionMenu(title, items, selected, footer)
-    ui.drawHeader(APP_TITLE)
-
-    ui.centerText(
-        term,
-        5,
-        title,
-        colors.lightGray
-    )
-
-    local _, height = term.getSize()
-    local availableRows = math.max(1, height - 7)
-    local spacing = 1
-
-    if #items * 2 <= availableRows then
-        spacing = 2
-    end
-
-    for i, item in ipairs(items) do
-        local y = 6 + i * spacing
-
-        if i == selected then
-            term.setBackgroundColor(colors.white)
-            term.setTextColor(colors.black)
-            term.setCursorPos(5, y)
-            term.write(" > " .. item .. " ")
-        else
-            term.setCursorPos(7, y)
-            term.setTextColor(colors.lightGray)
-            term.write(item)
-        end
-
-        ui.resetColors(term)
-    end
-
-    ui.drawFooter(footer)
-end
-
 local function showStatus()
     ui.drawHeader(APP_TITLE)
 
@@ -210,50 +172,97 @@ local function runProgram(name, path)
     end
 end
 
-local function showGames()
-    local selected = 1
+local function createGamesScreen()
+    local width = term.getSize()
+    local buttonWidth = math.min(28, math.max(18, width - 12))
+    local x = math.max(2, math.floor((width - buttonWidth) / 2) + 1)
 
-    local gameItems = {
-        "Breakout",
-        "Back"
-    }
+    local screen = Screen.new(term, {
+        columns = 1
+    })
+
+    screen:addButton({
+        id = "breakout",
+        label = "Breakout",
+        x = x,
+        y = 6,
+        width = buttonWidth,
+        height = 2,
+        backgroundColor = colors.blue,
+        textColor = colors.white
+    })
+
+    screen:addButton({
+        id = "tetris",
+        label = "Tetris",
+        x = x,
+        y = 10,
+        width = buttonWidth,
+        height = 2,
+        backgroundColor = colors.cyan,
+        textColor = colors.black
+    })
+
+    screen:addButton({
+        id = "back",
+        label = "Back",
+        x = x,
+        y = 14,
+        width = buttonWidth,
+        height = 2,
+        backgroundColor = colors.gray,
+        textColor = colors.white
+    })
+
+    return screen
+end
+
+local function drawGamesScreen(screen)
+    ui.drawHeader(APP_TITLE)
+
+    ui.centerText(
+        term,
+        4,
+        "GAMES",
+        colors.lightGray
+    )
+
+    screen:draw()
+    ui.drawFooter("MOUSE CLICK  UP/DOWN  ENTER  LEFT/SHIFT")
+end
+
+local function showGames()
+    local screen = createGamesScreen()
 
     while true do
-        drawSelectionMenu(
-            "GAMES",
-            gameItems,
-            selected,
-            "UP/DOWN  ENTER  LEFT/SHIFT"
-        )
+        drawGamesScreen(screen)
 
-        local _, key = os.pullEvent("key")
+        local event, a, b, c = os.pullEvent()
 
-        if key == keys.up then
-            selected = selected - 1
+        if event == "term_resize" then
+            screen = createGamesScreen()
 
-            if selected < 1 then
-                selected = #gameItems
-            end
+        elseif event == "key" and (a == keys.left or a == keys.leftShift) then
+            return
 
-        elseif key == keys.down then
-            selected = selected + 1
+        else
+            local action, changed = screen:handleEvent(event, a, b, c)
 
-            if selected > #gameItems then
-                selected = 1
-            end
-
-        elseif key == keys.enter then
-            if selected == 1 then
+            if action == "breakout" then
                 runProgram(
                     "Breakout",
                     "/games/breakout.lua"
                 )
-            elseif selected == 2 then
+            elseif action == "tetris" then
+                runProgram(
+                    "Tetris",
+                    "/games/tetris.lua"
+                )
+            elseif action == "back" then
                 return
+            elseif changed then
+                drawGamesScreen(screen)
             end
-
-        elseif key == keys.left or key == keys.leftShift then
-            return
         end
     end
 end
