@@ -19,6 +19,7 @@ end
 local running = true
 local message = "Network Core diagnostics"
 local peersData = Peers.load()
+local lastStatus = nil
 
 local function resetColors()
     term.setBackgroundColor(colors.black)
@@ -107,7 +108,7 @@ local scanButton = Button.new({
     label = "Scan",
     x = 2,
     y = 14,
-    width = 14,
+    width = 10,
     height = 1,
     backgroundColor = colors.blue,
     textColor = colors.white
@@ -116,20 +117,31 @@ local scanButton = Button.new({
 local pingButton = Button.new({
     id = "ping",
     label = "Ping",
-    x = 18,
+    x = 13,
     y = 14,
-    width = 14,
+    width = 10,
     height = 1,
     backgroundColor = colors.green,
+    textColor = colors.black
+})
+
+local pairButton = Button.new({
+    id = "pair",
+    label = "Pair",
+    x = 24,
+    y = 14,
+    width = 13,
+    height = 1,
+    backgroundColor = colors.orange,
     textColor = colors.black
 })
 
 local backButton = Button.new({
     id = "back",
     label = "Back",
-    x = 34,
+    x = 38,
     y = 14,
-    width = math.max(12, width - 35),
+    width = math.max(10, width - 39),
     height = 1,
     backgroundColor = colors.red,
     textColor = colors.white
@@ -156,6 +168,20 @@ local function refreshPeers()
     end
 end
 
+local function findPending(status, peerId)
+    if not status or not peerId then
+        return nil
+    end
+
+    for _, pending in ipairs(status.pairings or {}) do
+        if pending.peerId == peerId then
+            return pending
+        end
+    end
+
+    return nil
+end
+
 local function drawHeader()
     term.setBackgroundColor(colors.blue)
     term.setTextColor(colors.white)
@@ -173,7 +199,7 @@ local function drawHeader()
 end
 
 local function drawFooter()
-    local footer = "MOUSE  UP/DOWN peer  ENTER ping  CTRL scan  SHIFT back"
+    local footer = "MOUSE  ARROWS peer  ENTER ping  CTRL scan  SHIFT back"
 
     if #footer > width then
         footer = "MOUSE  ARROWS  ENTER ping  CTRL scan  SHIFT"
@@ -190,6 +216,39 @@ local function drawFooter()
     resetColors()
 end
 
+local function configurePairButton(selected, pending)
+    if not selected then
+        pairButton.label = "Pair"
+        pairButton:setEnabled(false)
+        return
+    end
+
+    if selected.trusted then
+        pairButton.label = "Untrust"
+        pairButton.backgroundColor = colors.red
+        pairButton.textColor = colors.white
+        pairButton:setEnabled(true)
+        return
+    end
+
+    pairButton.backgroundColor = colors.orange
+    pairButton.textColor = colors.black
+
+    if not pending then
+        pairButton.label = "Pair"
+        pairButton:setEnabled(true)
+    elseif pending.code and not pending.localConfirmed then
+        pairButton.label = "Confirm"
+        pairButton:setEnabled(true)
+    elseif pending.localConfirmed then
+        pairButton.label = "Waiting"
+        pairButton:setEnabled(false)
+    else
+        pairButton.label = "Pairing..."
+        pairButton:setEnabled(false)
+    end
+end
+
 local function draw()
     resetColors()
     term.clear()
@@ -198,6 +257,7 @@ local function draw()
     drawHeader()
 
     local status = readStatus()
+    lastStatus = status
     local online = serviceOnline(status)
     local modems = status and status.modems or Transport.getModems()
     local modemText = #modems > 0 and table.concat(modems, ",") or "NONE"
@@ -228,13 +288,16 @@ local function draw()
         2,
         6,
         width - 3,
-        "PEERS: " .. tostring(#peersData.peers) .. "   [?] untrusted  [T] trusted",
+        "PEERS: " .. tostring(#peersData.peers) ..
+            "  TRUSTED: " .. tostring(status and status.trustedCount or 0) ..
+            "   [?] untrusted [T] trusted",
         colors.lightGray
     )
 
     peerList:draw(term)
 
     local selected = peerList:getSelectedItem()
+    local pending = selected and findPending(status, selected.id) or nil
 
     if selected then
         local seenAge = math.max(
@@ -247,12 +310,13 @@ local function draw()
             12,
             width - 3,
             string.format(
-                "Selected #%d | seen %ds | protocol v%d",
+                "Selected #%d | seen %ds | protocol v%d | %s",
                 selected.id,
                 seenAge,
-                selected.protocolVersion or 0
+                selected.protocolVersion or 0,
+                selected.trusted and "TRUSTED" or "UNTRUSTED"
             ),
-            colors.white
+            selected.trusted and colors.lime or colors.white
         )
     else
         writeLine(2, 12, width - 3, "No peer selected.", colors.lightGray)
@@ -261,9 +325,34 @@ local function draw()
     scanButton:draw(term)
     pingButton:setEnabled(selected ~= nil)
     pingButton:draw(term)
+    configurePairButton(selected, pending)
+    pairButton:draw(term)
     backButton:draw(term)
 
-    writeLine(2, 16, width - 3, message, colors.lightGray)
+    if pending and pending.code then
+        local localState = pending.localConfirmed and "YES" or "NO"
+        local remoteState = pending.remoteConfirmed and "YES" or "NO"
+
+        writeLine(
+            2,
+            16,
+            width - 3,
+            "PAIR CODE: " .. tostring(pending.code) ..
+                "  LOCAL: " .. localState ..
+                "  REMOTE: " .. remoteState,
+            colors.yellow
+        )
+    elseif selected and selected.trusted then
+        writeLine(
+            2,
+            16,
+            width - 3,
+            "Trusted session active. Sequenced app packets enabled.",
+            colors.lime
+        )
+    else
+        writeLine(2, 16, width - 3, message, colors.lightGray)
+    end
 
     local lastError = status and status.lastError or ""
 
@@ -275,12 +364,20 @@ local function draw()
             "CORE: " .. tostring(lastError),
             colors.orange
         )
+    elseif pending and pending.code then
+        writeLine(
+            2,
+            17,
+            width - 3,
+            "Compare codes on BOTH computers, then Confirm on BOTH.",
+            colors.lightGray
+        )
     else
         writeLine(
             2,
             17,
             width - 3,
-            "Discovery and ping only. Pairing comes next.",
+            message,
             colors.gray
         )
     end
@@ -305,6 +402,33 @@ local function pingSelected()
     message = "Ping requested for #" .. tostring(peer.id) .. "..."
 end
 
+local function pairSelected()
+    local peer = peerList:getSelectedItem()
+
+    if not peer then
+        message = "Select a peer first."
+        return
+    end
+
+    if peer.trusted then
+        os.queueEvent("ccbase_net_untrust", peer.id)
+        message = "Removing trust for #" .. tostring(peer.id) .. "..."
+        return
+    end
+
+    local pending = findPending(lastStatus, peer.id)
+
+    if not pending then
+        os.queueEvent("ccbase_net_pair_start", peer.id)
+        message = "Pair request sent to #" .. tostring(peer.id) .. "..."
+    elseif pending.code and not pending.localConfirmed then
+        os.queueEvent("ccbase_net_pair_confirm", peer.id)
+        message = "Pair code confirmed locally."
+    else
+        message = "Pairing is waiting for the other computer."
+    end
+end
+
 local function isPointerClick(button)
     return button == 1 or button == 0
 end
@@ -314,7 +438,7 @@ local refreshTimer = os.startTimer(0.5)
 draw()
 
 while running do
-    local event, a, b, c = os.pullEvent()
+    local event, a, b, c, d = os.pullEvent()
     local redraw = false
 
     if event == "mouse_click" and isPointerClick(a) then
@@ -330,6 +454,10 @@ while running do
 
         elseif pingButton:contains(b, c) then
             pingSelected()
+            redraw = true
+
+        elseif pairButton:contains(b, c) and pairButton.enabled then
+            pairSelected()
             redraw = true
 
         elseif backButton:contains(b, c) then
@@ -380,6 +508,29 @@ while running do
             message = "Ping sent to #" .. tostring(a)
         else
             message = "Ping failed for #" .. tostring(a)
+        end
+        redraw = true
+
+    elseif event == "ccbase_net_pair_state" then
+        refreshPeers()
+
+        if b == "confirm_required" or b == "remote_confirmed" then
+            message = "Pairing with #" .. tostring(a) .. ": compare code " .. tostring(c)
+        elseif b == "trusted" then
+            message = "Computer #" .. tostring(a) .. " is now trusted."
+        elseif b == "expired" then
+            message = "Pairing with #" .. tostring(a) .. " expired."
+        elseif b == "untrusted" then
+            message = "Trust removed from #" .. tostring(a) .. "."
+        end
+
+        redraw = true
+
+    elseif event == "ccbase_net_pair_action" then
+        if d then
+            message = "Pair action accepted for #" .. tostring(a) .. "."
+        else
+            message = "Pair action failed: " .. tostring(c)
         end
         redraw = true
 
