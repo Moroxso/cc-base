@@ -5,6 +5,7 @@ local Protocol = require("lib.net.protocol")
 local Transport = require("lib.net.transport")
 local Peers = require("lib.net.peers")
 local Address = require("lib.net.address")
+local Firewall = require("lib.net.firewall")
 
 local STATUS_PATH = "/data/network/status.json"
 local width, height = term.getSize()
@@ -96,6 +97,7 @@ local function button(id, label, x, y, w, bg, fg)
 end
 
 local routesButton = button("routes", "Routing", 2, 13, 12, colors.brown)
+local firewallButton = button("firewall", "Firewall", 15, 13, 12, colors.red)
 local scanButton = button("scan", "Scan", 2, 14, 10, colors.blue)
 local pingButton = button("ping", "Ping", 13, 14, 10, colors.green, colors.black)
 local pairButton = button("pair", "Pair", 24, 14, 13, colors.orange, colors.black)
@@ -190,6 +192,7 @@ local function draw()
     local modems = status and status.modems or Transport.getModems()
     local peer = selectedPeer()
     local pending = peer and pendingPair(status, peer.id) or nil
+    local firewall = Firewall.load()
 
     line(4, string.format(
         "ID #%d  %s  CCIP %s",
@@ -208,24 +211,23 @@ local function draw()
     line(6,
         "PEERS: " .. tostring(#peersData.peers) ..
         "  TRUSTED: " .. tostring(status and status.trustedCount or 0) ..
-        "   [?] untrusted [T] trusted",
+        "  FW: " .. (firewall.enabled and "ON" or "OFF"),
         colors.lightGray
     )
 
     peerList:draw(term)
 
     if peer then
-        line(13,
+        line(12,
             string.format("#%d %s | %s", peer.id, peerAddress(peer), peer.trusted and "TRUSTED" or "UNTRUSTED"),
-            peer.trusted and colors.lime or colors.white,
-            15,
-            width - 16
+            peer.trusted and colors.lime or colors.white
         )
     else
-        line(13, "No peer selected.", colors.lightGray, 15, width - 16)
+        line(12, "No peer selected.", colors.lightGray)
     end
 
     routesButton:draw(term)
+    firewallButton:draw(term)
     scanButton:draw(term)
     pingButton:setEnabled(peer ~= nil)
     pingButton:draw(term)
@@ -249,7 +251,7 @@ local function draw()
             colors.yellow
         )
     elseif secure then
-        line(16, "Trusted CCIP / CCDP / CCTP link. Routing available.", colors.lime)
+        line(16, "Trusted CC stack link. Routing + firewall available.", colors.lime)
     else
         line(16, message, colors.lightGray)
     end
@@ -312,6 +314,11 @@ local function openRouting()
     refreshPeers()
 end
 
+local function openFirewall()
+    local ok, err = Runtime.run("/apps/firewall.lua")
+    message = ok and "Firewall controls closed." or ("Firewall UI error: " .. tostring(err))
+end
+
 local refreshTimer = os.startTimer(0.5)
 draw()
 
@@ -323,6 +330,7 @@ while running do
         local index = peerList:findAt(b, c)
         if index then peerList:setSelected(index) redraw = true
         elseif routesButton:contains(b, c) then openRouting() redraw = true
+        elseif firewallButton:contains(b, c) then openFirewall() redraw = true
         elseif scanButton:contains(b, c) then scan() redraw = true
         elseif pingButton:contains(b, c) then corePing() redraw = true
         elseif pairButton:contains(b, c) and pairButton.enabled then pairAction() redraw = true
@@ -356,6 +364,12 @@ while running do
         redraw = true
     elseif event == "ccbase_ip_ping_failed" or event == "ccbase_ccdp_ping_failed" or event == "ccbase_cctp_ping_failed" then
         message = "Network test failed: " .. tostring(b) redraw = true
+    elseif event == "ccbase_firewall_drop" then
+        message = "Firewall DROP " .. tostring(a) .. ": " .. tostring(b)
+        redraw = true
+    elseif event == "ccbase_firewall_changed" then
+        message = "Firewall policy updated."
+        redraw = true
     elseif event == "ccbase_net_scan_started" then
         message = a and "Discovery broadcast sent." or "Scan failed: no open modem." redraw = true
     elseif event == "ccbase_net_ping_started" then
