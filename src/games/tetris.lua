@@ -1,5 +1,6 @@
 local Game = require("tetris.game")
 local Renderer = require("tetris.renderer")
+local Storage = require("tetris.storage")
 local Button = require("lib.gui.button")
 local KeyRepeat = require("lib.input.key_repeat")
 
@@ -15,6 +16,8 @@ end
 
 local game = Game.new(10, 16)
 local renderer = Renderer.new(term)
+local records = Storage.load()
+local recordsDirty = false
 
 local infoX = 26
 
@@ -84,12 +87,35 @@ local function syncButtonLabels()
     end
 end
 
+local function updateRecords()
+    local changed
+    records, changed = Storage.update(records, game)
+
+    if changed then
+        recordsDirty = true
+    end
+end
+
+local function saveRecords()
+    updateRecords()
+
+    if recordsDirty then
+        local ok = Storage.save(records)
+
+        if ok then
+            recordsDirty = false
+        end
+    end
+end
+
 local function redraw()
+    updateRecords()
     syncButtonLabels()
-    renderer:draw(game, buttons)
+    renderer:draw(game, buttons, records)
 end
 
 local function restartGame()
+    saveRecords()
     game:restart()
     keyRepeat:cancel()
     scheduleGravity()
@@ -200,10 +226,16 @@ while running do
         end
     end
 
+    if game.gameOver then
+        saveRecords()
+    end
+
     if redrawNeeded and running then
         redraw()
     end
 end
+
+saveRecords()
 
 term.setBackgroundColor(colors.black)
 term.setTextColor(colors.white)
