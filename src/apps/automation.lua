@@ -13,6 +13,15 @@ local sides = {
     "bottom"
 }
 
+local operators = {
+    ">=",
+    ">",
+    "<=",
+    "<",
+    "==",
+    "!="
+}
+
 local function resetColors()
     term.setBackgroundColor(colors.black)
     term.setTextColor(colors.white)
@@ -190,8 +199,17 @@ local function addRule(config)
         return
     end
 
+    local operatorIndex = chooseFromList(
+        "CONDITION",
+        operators
+    )
+
+    if not operatorIndex then
+        return
+    end
+
     local threshold = chooseLevel(
-        "INPUT THRESHOLD",
+        "INPUT VALUE",
         1
     )
 
@@ -218,18 +236,21 @@ local function addRule(config)
     end
 
     local inputSide = sides[inputIndex]
+    local operator = operators[operatorIndex]
     local outputSide = sides[outputIndex]
 
     local rule = {
         name = string.format(
-            "%s>=%d -> %s=%d",
+            "%s%s%d -> %s=%d",
             inputSide:upper(),
+            operator,
             threshold,
             outputSide:upper(),
             outputValue
         ),
         enabled = true,
         inputSide = inputSide,
+        operator = operator,
         threshold = threshold,
         outputSide = outputSide,
         outputValue = outputValue
@@ -313,7 +334,7 @@ local function manageRules(config)
             clear()
             drawHeader("RULES")
 
-            local _, height = term.getSize()
+            local width, height = term.getSize()
             local maxVisible = math.max(1, height - 8)
             local first = 1
 
@@ -332,6 +353,11 @@ local function manageRules(config)
                 local rule = config.rules[i]
                 local prefix = rule.enabled and "ON " or "OFF"
                 local text = prefix .. " " .. rule.name
+                local maxText = math.max(1, width - 5)
+
+                if #text > maxText then
+                    text = text:sub(1, maxText - 3) .. "..."
+                end
 
                 if i == selected then
                     term.setBackgroundColor(colors.white)
@@ -434,7 +460,7 @@ local function drawMain(config, selected)
 
     term.setCursorPos(3, 15)
     term.setTextColor(colors.lightGray)
-    term.write("Rule condition: input >= threshold")
+    term.write("Conditions: >=  >  <=  <  ==  !=")
 
     term.setCursorPos(3, 16)
     term.write("Matching rules use highest output.")
