@@ -1,3 +1,5 @@
+package.path = package.path .. ";/?.lua;/?/init.lua"
+
 local Automation = require("lib.automation")
 
 local CONFIG_PATH = "/data/automation.json"
