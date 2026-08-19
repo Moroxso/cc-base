@@ -6,44 +6,34 @@ local Routes = require("lib.net.routes")
 local Protocol = require("lib.net.protocol")
 
 local width, height = term.getSize()
-
-if width < 48 or height < 18 then
-    term.setBackgroundColor(colors.black)
-    term.setTextColor(colors.white)
-    term.clear()
-    term.setCursorPos(1, 1)
-    error("Terminal is too small for Routing UI")
-end
+if width < 48 or height < 18 then error("Terminal is too small for Routing UI") end
 
 local running = true
-local message = "Select a trusted gateway or enable router mode."
+local message = "Configure gateway/forwarding, then test a remote Computer ID."
 local peersData = Peers.load()
 local routesData = Routes.load()
 local requestSequence = 0
+local targetId = math.min(Address.MAX_COMPUTER_ID, os.getComputerID() + 1)
 
 local function resetColors()
     term.setBackgroundColor(colors.black)
     term.setTextColor(colors.white)
 end
 
-local function writeLine(x, y, maxWidth, text, color)
+local function line(y, text, color, x, maxWidth)
+    x = x or 2
+    maxWidth = maxWidth or (width - x)
     text = tostring(text or "")
-
-    if #text > maxWidth then
-        text = text:sub(1, maxWidth)
-    end
-
+    if #text > maxWidth then text = text:sub(1, maxWidth) end
     term.setBackgroundColor(colors.black)
     term.setTextColor(color or colors.white)
     term.setCursorPos(x, y)
-    term.write(text)
-    term.write(string.rep(" ", math.max(0, maxWidth - #text)))
+    term.write(text .. string.rep(" ", math.max(0, maxWidth - #text)))
     resetColors()
 end
 
 local function newRequestId(prefix)
     requestSequence = requestSequence + 1
-
     return string.format(
         "%s:%d:%d:%d",
         prefix,
@@ -78,54 +68,31 @@ local peerList = List.new({
     selectedTextColor = colors.black
 })
 
-local gatewayButton = Button.new({
-    id = "gateway",
-    label = "Set Gateway",
-    x = 2,
-    y = 14,
-    width = 13,
-    height = 1,
-    backgroundColor = colors.blue,
-    textColor = colors.white
-})
+local function button(id, label, x, y, w, bg, fg)
+    return Button.new({
+        id = id,
+        label = label,
+        x = x,
+        y = y,
+        width = w,
+        height = 1,
+        backgroundColor = bg,
+        textColor = fg or colors.white
+    })
+end
 
-local forwardButton = Button.new({
-    id = "forward",
-    label = "Forward OFF",
-    x = 16,
-    y = 14,
-    width = 13,
-    height = 1,
-    backgroundColor = colors.orange,
-    textColor = colors.black
-})
-
-local clearButton = Button.new({
-    id = "clear",
-    label = "Clear GW",
-    x = 30,
-    y = 14,
-    width = 10,
-    height = 1,
-    backgroundColor = colors.gray,
-    textColor = colors.white
-})
-
-local backButton = Button.new({
-    id = "back",
-    label = "Back",
-    x = 41,
-    y = 14,
-    width = math.max(8, width - 42),
-    height = 1,
-    backgroundColor = colors.red,
-    textColor = colors.white
-})
+local gatewayButton = button("gateway", "Set Gateway", 2, 14, 13, colors.blue)
+local forwardButton = button("forward", "Forward OFF", 16, 14, 13, colors.orange, colors.black)
+local clearButton = button("clear", "Clear GW", 30, 14, 10, colors.gray)
+local backButton = button("back", "Back", 41, 14, math.max(8, width - 42), colors.red)
+local minusButton = button("minus", "ID -", 2, 15, 8, colors.gray)
+local plusButton = button("plus", "ID +", 11, 15, 8, colors.gray)
+local ipTestButton = button("iptest", "Route Ping", 20, 15, 13, colors.cyan, colors.black)
+local cctpTestButton = button("tcptest", "Route CCTP", 34, 15, math.max(14, width - 35), colors.lightBlue, colors.black)
 
 local function refresh()
     local selected = peerList:getSelectedItem()
     local selectedId = selected and selected.id or nil
-
     peersData = Peers.load()
     routesData = Routes.load()
     peerList:setItems(peersData.peers)
@@ -143,34 +110,24 @@ end
 local function drawHeader()
     term.setBackgroundColor(colors.blue)
     term.setTextColor(colors.white)
-
     for y = 1, 3 do
         term.setCursorPos(1, y)
         term.write(string.rep(" ", width))
     end
-
     local title = "CCIP ROUTING"
-    local x = math.max(1, math.floor((width - #title) / 2) + 1)
-    term.setCursorPos(x, 2)
+    term.setCursorPos(math.floor((width - #title) / 2) + 1, 2)
     term.write(title)
     resetColors()
 end
 
 local function drawFooter()
-    local footer = "MOUSE  UP/DOWN peer  ENTER gateway  CTRL forward  SHIFT back"
-
-    if #footer > width then
-        footer = "UP/DOWN ENTER gateway CTRL forward SHIFT back"
-    end
-
+    local text = "LEFT/RIGHT target  ENTER ping  CTRL forward  SHIFT back"
     term.setBackgroundColor(colors.gray)
     term.setTextColor(colors.white)
     term.setCursorPos(1, height)
     term.write(string.rep(" ", width))
-
-    local x = math.max(1, math.floor((width - #footer) / 2) + 1)
-    term.setCursorPos(x, height)
-    term.write(footer:sub(1, width))
+    term.setCursorPos(math.max(1, math.floor((width - #text) / 2) + 1), height)
+    term.write(text:sub(1, width))
     resetColors()
 end
 
@@ -179,197 +136,166 @@ local function draw()
     term.clear()
     drawHeader()
 
-    local localAddress = Address.localAddress() or "UNAVAILABLE"
     local gateway = routesData.defaultGateway or "DIRECT"
+    local targetAddress = Address.forComputer(targetId) or "INVALID"
 
-    writeLine(
-        2,
-        4,
-        width - 3,
-        "LOCAL: " .. localAddress .. "   ROUTES: " .. tostring(#routesData.routes),
+    line(4,
+        "LOCAL: " .. tostring(Address.localAddress() or "UNAVAILABLE") ..
+        "   STATIC ROUTES: " .. tostring(#routesData.routes),
         colors.cyan
     )
-
-    writeLine(
-        2,
-        5,
-        width - 3,
+    line(5,
         "FORWARDING: " .. (routesData.forwarding and "ON" or "OFF") ..
-            "   DEFAULT: " .. gateway,
+        "   DEFAULT: " .. gateway,
         routesData.forwarding and colors.lime or colors.lightGray
     )
-
-    writeLine(
-        2,
-        6,
-        width - 3,
-        "Gateway must be a directly reachable TRUSTED peer.",
-        colors.lightGray
-    )
+    line(6, "Gateway must be a directly reachable TRUSTED peer.", colors.lightGray)
 
     peerList:draw(term)
-
     local selected = peerList:getSelectedItem()
 
     if selected then
-        writeLine(
-            2,
-            12,
-            width - 3,
-            string.format(
-                "Selected #%d %s | %s",
-                selected.id,
-                peerAddress(selected),
-                selected.trusted and "TRUSTED" or "UNTRUSTED"
-            ),
+        line(12,
+            string.format("Gateway candidate #%d %s | %s", selected.id, peerAddress(selected), selected.trusted and "TRUSTED" or "UNTRUSTED"),
             selected.trusted and colors.lime or colors.orange
         )
     else
-        writeLine(2, 12, width - 3, "No peer selected.", colors.lightGray)
+        line(12, "No gateway peer selected.", colors.lightGray)
     end
+
+    line(13,
+        string.format("TEST TARGET: Computer #%d  CCIP %s", targetId, targetAddress),
+        colors.yellow
+    )
 
     gatewayButton:setEnabled(selected ~= nil and selected.trusted == true)
     gatewayButton:draw(term)
-
     forwardButton.label = routesData.forwarding and "Forward ON" or "Forward OFF"
     forwardButton.backgroundColor = routesData.forwarding and colors.green or colors.orange
-    forwardButton.textColor = colors.black
     forwardButton:draw(term)
-
     clearButton:setEnabled(routesData.defaultGateway ~= nil)
     clearButton:draw(term)
     backButton:draw(term)
+    minusButton:setEnabled(targetId > 0)
+    plusButton:setEnabled(targetId < Address.MAX_COMPUTER_ID)
+    minusButton:draw(term)
+    plusButton:draw(term)
+    ipTestButton:draw(term)
+    cctpTestButton:draw(term)
 
-    writeLine(
-        2,
-        16,
-        width - 3,
+    line(16,
         routesData.forwarding and
-            "ROUTER MODE: packets not addressed to this host may be forwarded." or
+            "ROUTER MODE: transit CCIP packets are forwarded with TTL - 1." or
             "HOST MODE: transit packets are dropped.",
         routesData.forwarding and colors.lime or colors.white
     )
-
-    writeLine(2, 17, width - 3, message, colors.gray)
+    line(17, message, colors.gray)
     drawFooter()
 end
 
 local function setGateway()
     local peer = peerList:getSelectedItem()
-
     if not peer or not peer.trusted then
         message = "Select a trusted directly connected peer first."
         return
     end
-
     local address = peerAddress(peer)
-    local requestId = newRequestId("route-gw")
-
-    os.queueEvent("ccbase_route_set_default", address, requestId)
+    os.queueEvent("ccbase_route_set_default", address, newRequestId("route-gw"))
     message = "Setting default gateway to " .. address .. "..."
 end
 
 local function toggleForwarding()
-    local requestId = newRequestId("route-fwd")
     os.queueEvent(
         "ccbase_route_set_forwarding",
         not routesData.forwarding,
-        requestId
+        newRequestId("route-fwd")
     )
     message = "Changing forwarding mode..."
 end
 
 local function clearGateway()
-    local requestId = newRequestId("route-clear")
-    os.queueEvent("ccbase_route_clear_default", requestId)
+    os.queueEvent("ccbase_route_clear_default", newRequestId("route-clear"))
     message = "Clearing default gateway..."
 end
 
-local function isPointerClick(button)
-    return button == 1 or button == 0
+local function changeTarget(delta)
+    targetId = math.max(0, math.min(Address.MAX_COMPUTER_ID, targetId + delta))
+    message = "Target changed to Computer #" .. tostring(targetId)
+end
+
+local function testRoute(kind)
+    local address = Address.forComputer(targetId)
+    if not address then
+        message = "Invalid target ID."
+        return
+    end
+
+    if kind == "CCIP" then
+        os.queueEvent("ccbase_ip_ping", address)
+    else
+        os.queueEvent("ccbase_cctp_ping", address)
+    end
+
+    message = kind .. " routed test queued for " .. address
 end
 
 local refreshTimer = os.startTimer(0.5)
 draw()
 
 while running do
-    local event, a, b, c, d = os.pullEvent()
+    local event, a, b, c, d, e, f = os.pullEvent()
     local redraw = false
 
-    if event == "mouse_click" and isPointerClick(a) then
+    if event == "mouse_click" and (a == 1 or a == 0) then
         local index = peerList:findAt(b, c)
-
-        if index then
-            peerList:setSelected(index)
-            redraw = true
-        elseif gatewayButton:contains(b, c) and gatewayButton.enabled then
-            setGateway()
-            redraw = true
-        elseif forwardButton:contains(b, c) then
-            toggleForwarding()
-            redraw = true
-        elseif clearButton:contains(b, c) and clearButton.enabled then
-            clearGateway()
-            redraw = true
-        elseif backButton:contains(b, c) then
-            running = false
-        end
+        if index then peerList:setSelected(index) redraw = true
+        elseif gatewayButton:contains(b, c) and gatewayButton.enabled then setGateway() redraw = true
+        elseif forwardButton:contains(b, c) then toggleForwarding() redraw = true
+        elseif clearButton:contains(b, c) and clearButton.enabled then clearGateway() redraw = true
+        elseif minusButton:contains(b, c) and minusButton.enabled then changeTarget(-1) redraw = true
+        elseif plusButton:contains(b, c) and plusButton.enabled then changeTarget(1) redraw = true
+        elseif ipTestButton:contains(b, c) then testRoute("CCIP") redraw = true
+        elseif cctpTestButton:contains(b, c) then testRoute("CCTP") redraw = true
+        elseif backButton:contains(b, c) then running = false end
 
     elseif event == "key" then
-        if a == keys.up then
-            peerList:move(-1)
-            redraw = true
-        elseif a == keys.down then
-            peerList:move(1)
-            redraw = true
-        elseif a == keys.enter then
-            setGateway()
-            redraw = true
-        elseif a == keys.leftCtrl then
-            toggleForwarding()
-            redraw = true
-        elseif a == keys.leftShift then
-            running = false
-        end
+        if a == keys.up then peerList:move(-1) redraw = true
+        elseif a == keys.down then peerList:move(1) redraw = true
+        elseif a == keys.left then changeTarget(-1) redraw = true
+        elseif a == keys.right then changeTarget(1) redraw = true
+        elseif a == keys.enter then testRoute("CCIP") redraw = true
+        elseif a == keys.leftCtrl then toggleForwarding() redraw = true
+        elseif a == keys.leftShift then running = false end
 
     elseif event == "ccbase_routes_changed" then
-        refresh()
-        message = "Routing table updated."
-        redraw = true
-
+        refresh() message = "Routing table updated." redraw = true
     elseif event == "ccbase_route_action" then
         refresh()
-
-        if b then
-            message = "Routing: " .. tostring(d) .. " = " .. tostring(c)
-        else
-            message = "Routing error: " .. tostring(c)
-        end
-
+        message = b and ("Routing: " .. tostring(d) .. " = " .. tostring(c)) or
+            ("Routing error: " .. tostring(c))
         redraw = true
-
     elseif event == "ccbase_net_peers_changed" then
-        refresh()
+        refresh() redraw = true
+    elseif event == "ccbase_ip_pong" then
+        message = string.format("ROUTED CCIP pong %s: %sms", tostring(a), tostring(b))
         redraw = true
-
+    elseif event == "ccbase_cctp_pong" then
+        message = string.format(
+            "ROUTED CCTP %s: %sms | win %s | RTO %sms",
+            tostring(a), tostring(b), tostring(e or "?"), tostring(f or "?")
+        )
+        redraw = true
+    elseif event == "ccbase_ip_ping_failed" or event == "ccbase_cctp_ping_failed" then
+        message = "Routed test failed: " .. tostring(b)
+        redraw = true
     elseif event == "timer" and a == refreshTimer then
-        refresh()
-        refreshTimer = os.startTimer(0.5)
-        redraw = true
-
+        refresh() refreshTimer = os.startTimer(0.5) redraw = true
     elseif event == "term_resize" then
-        local newWidth, newHeight = term.getSize()
-
-        if newWidth < 48 or newHeight < 18 then
-            running = false
-        else
-            redraw = true
-        end
+        local w, h = term.getSize()
+        if w < 48 or h < 18 then running = false else redraw = true end
     end
 
-    if redraw and running then
-        draw()
-    end
+    if redraw and running then draw() end
 end
 
 resetColors()
