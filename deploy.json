@@ -1,0 +1,21 @@
+{
+  "version": "0.1.0",
+  "files": [
+    {
+      "source": "src/startup.lua",
+      "target": "startup.lua"
+    },
+    {
+      "source": "src/main.lua",
+      "target": "main.lua"
+    },
+    {
+      "source": "src/update.lua",
+      "target": "update.lua"
+    },
+    {
+      "source": "src/games/breakout.lua",
+      "target": "games/breakout.lua"
+    }
+  ]
+}
