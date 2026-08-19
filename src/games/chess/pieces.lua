@@ -12,6 +12,33 @@ local symbols = {
     king = "K"
 }
 
+local sprites = {
+    pawn = {
+        " () ",
+        " /\\ "
+    },
+    knight = {
+        "/^> ",
+        "/_| "
+    },
+    bishop = {
+        " /\\ ",
+        " <> "
+    },
+    rook = {
+        "[##]",
+        "|__|"
+    },
+    queen = {
+        "*^* ",
+        "\\_/ "
+    },
+    king = {
+        " +  ",
+        "/_\\ "
+    }
+}
+
 function Pieces.new(kind, color)
     return {
         kind = kind,
@@ -50,6 +77,20 @@ function Pieces.symbol(piece)
     end
 
     return symbol
+end
+
+function Pieces.sprite(piece)
+    if not piece then
+        return {
+            "    ",
+            "    "
+        }
+    end
+
+    return sprites[piece.kind] or {
+        " ?? ",
+        " ?? "
+    }
 end
 
 function Pieces.name(piece)
