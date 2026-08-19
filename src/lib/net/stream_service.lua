@@ -6,10 +6,14 @@ local Protocol = require("lib.net.protocol")
 local StreamService = {}
 StreamService.__index = StreamService
 
-local RETRANSMIT_MS = 700
+local WINDOW_SIZE = 4
+local INITIAL_RTO_MS = 700
+local MIN_RTO_MS = 250
+local MAX_RTO_MS = 3000
 local MAX_RETRIES = 5
 local TIME_WAIT_MS = 5000
 local MAINTENANCE_SECONDS = 0.2
+local DIAGNOSTIC_BURST = WINDOW_SIZE
 local internalSequence = 0
 
 local function newInternalId(prefix)
@@ -34,6 +38,42 @@ local function validPort(port)
         port >= 1 and port <= 65535
 end
 
+local function clamp(value, minimum, maximum)
+    if value < minimum then
+        return minimum
+    elseif value > maximum then
+        return maximum
+    end
+
+    return value
+end
+
+local function sortedInflight(conn)
+    local result = {}
+
+    for _, entry in pairs(conn.inflight or {}) do
+        table.insert(result, entry)
+    end
+
+    table.sort(result, function(a, b)
+        return a.seq < b.seq
+    end)
+
+    return result
+end
+
+local function oldestInflight(conn)
+    local oldest = nil
+
+    for _, entry in pairs(conn.inflight or {}) do
+        if not oldest or entry.seq < oldest.seq then
+            oldest = entry
+        end
+    end
+
+    return oldest
+end
+
 function StreamService.new()
     local self = setmetatable({}, StreamService)
 
@@ -46,17 +86,76 @@ function StreamService.new()
     return self
 end
 
+function StreamService:newConnection(options)
+    options = options or {}
+
+    return {
+        id = options.id,
+        role = options.role,
+        state = options.state,
+        localPort = options.localPort,
+        remoteAddress = options.remoteAddress,
+        remotePort = options.remotePort,
+        sendNext = options.sendNext or 0,
+        recvNext = options.recvNext or 0,
+        controlPending = nil,
+        inflight = {},
+        inflightCount = 0,
+        sendQueue = {},
+        closeRequested = false,
+        closeRequestId = nil,
+        connectRequestId = options.connectRequestId,
+        connectedAnnounced = false,
+        closeNotified = false,
+        createdAt = Protocol.nowMs(),
+        lastActivity = Protocol.nowMs(),
+        listenerId = options.listenerId,
+        diagnosticServer = options.diagnosticServer == true,
+        diagnosticClient = options.diagnosticClient,
+        srtt = nil,
+        rttvar = nil,
+        rto = INITIAL_RTO_MS
+    }
+end
+
+function StreamService:updateRtt(conn, sampleMs)
+    sampleMs = tonumber(sampleMs)
+
+    if not conn or not sampleMs or sampleMs <= 0 then
+        return
+    end
+
+    if not conn.srtt then
+        conn.srtt = sampleMs
+        conn.rttvar = sampleMs / 2
+    else
+        local difference = math.abs(conn.srtt - sampleMs)
+        conn.rttvar = 0.75 * conn.rttvar + 0.25 * difference
+        conn.srtt = 0.875 * conn.srtt + 0.125 * sampleMs
+    end
+
+    conn.rto = clamp(
+        conn.srtt + math.max(100, 4 * conn.rttvar),
+        MIN_RTO_MS,
+        MAX_RTO_MS
+    )
+end
+
 function StreamService:queueIP(
     destination,
     sourcePort,
     destinationPort,
     segment,
-    connectionId
+    connectionId,
+    transmitKind,
+    sequence
 )
     local requestId = newInternalId("cctp-ip")
 
     self.pendingIP[requestId] = {
-        connectionId = connectionId
+        connectionId = connectionId,
+        transmitKind = transmitKind,
+        sequence = sequence
     }
 
     os.queueEvent(
@@ -72,41 +171,78 @@ function StreamService:queueIP(
     return requestId
 end
 
-function StreamService:transmitPending(conn)
-    if not conn or not conn.pending then
+function StreamService:transmitControl(conn)
+    local pending = conn and conn.controlPending
+
+    if not pending then
         return false
     end
 
-    conn.pending.lastSentAt = Protocol.nowMs()
+    local now = Protocol.nowMs()
+
+    if not pending.firstSentAt then
+        pending.firstSentAt = now
+    end
+
+    pending.lastSentAt = now
 
     self:queueIP(
         conn.remoteAddress,
         conn.localPort,
         conn.remotePort,
-        conn.pending.segment,
-        conn.id
+        pending.segment,
+        conn.id,
+        "control",
+        pending.segment.seq
     )
 
     return true
 end
 
-function StreamService:armPending(
+function StreamService:armControl(
     conn,
     segment,
     kind,
     requestId,
     expectedAck
 )
-    conn.pending = {
+    conn.controlPending = {
         segment = segment,
         kind = kind,
         requestId = requestId,
         expectedAck = expectedAck,
         retries = 0,
+        firstSentAt = nil,
         lastSentAt = 0
     }
 
-    self:transmitPending(conn)
+    self:transmitControl(conn)
+end
+
+function StreamService:transmitData(conn, entry)
+    if not conn or not entry then
+        return false
+    end
+
+    local now = Protocol.nowMs()
+
+    if not entry.firstSentAt then
+        entry.firstSentAt = now
+    end
+
+    entry.lastSentAt = now
+
+    self:queueIP(
+        conn.remoteAddress,
+        conn.localPort,
+        conn.remotePort,
+        entry.segment,
+        conn.id,
+        "data",
+        entry.seq
+    )
+
+    return true
 end
 
 function StreamService:sendUntracked(conn, segment)
@@ -115,7 +251,9 @@ function StreamService:sendUntracked(conn, segment)
         conn.localPort,
         conn.remotePort,
         segment,
-        conn.id
+        conn.id,
+        "untracked",
+        segment.seq
     )
 end
 
@@ -157,7 +295,9 @@ function StreamService:sendReset(
         localPort,
         remotePort,
         segment,
-        nil
+        nil,
+        "reset",
+        0
     )
 
     return true
@@ -180,6 +320,18 @@ function StreamService:emitClosed(conn, reason)
     )
 end
 
+function StreamService:notifyDataFailure(conn, entry, reason)
+    if entry and entry.requestId then
+        os.queueEvent(
+            "ccbase_cctp_send_result",
+            entry.requestId,
+            false,
+            reason,
+            conn.id
+        )
+    end
+end
+
 function StreamService:failConnection(conn, reason)
     if not conn or not self.connections[conn.id] then
         return
@@ -197,24 +349,20 @@ function StreamService:failConnection(conn, reason)
         )
     end
 
-    if conn.pending and conn.pending.requestId then
-        if conn.pending.kind == "data" then
-            os.queueEvent(
-                "ccbase_cctp_send_result",
-                conn.pending.requestId,
-                false,
-                reason,
-                conn.id
-            )
-        elseif conn.pending.kind == "fin" then
-            os.queueEvent(
-                "ccbase_cctp_close_result",
-                conn.pending.requestId,
-                false,
-                reason,
-                conn.id
-            )
-        end
+    if conn.controlPending and conn.controlPending.requestId and
+        conn.controlPending.kind == "fin"
+    then
+        os.queueEvent(
+            "ccbase_cctp_close_result",
+            conn.controlPending.requestId,
+            false,
+            reason,
+            conn.id
+        )
+    end
+
+    for _, entry in pairs(conn.inflight or {}) do
+        self:notifyDataFailure(conn, entry, reason)
     end
 
     for _, job in ipairs(conn.sendQueue or {}) do
@@ -230,7 +378,7 @@ function StreamService:failConnection(conn, reason)
     end
 
     if conn.closeRequestId and
-        (not conn.pending or conn.pending.kind ~= "fin")
+        (not conn.controlPending or conn.controlPending.kind ~= "fin")
     then
         os.queueEvent(
             "ccbase_cctp_close_result",
@@ -281,15 +429,22 @@ function StreamService:markEstablished(conn)
         end
 
         if conn.diagnosticClient then
-            self:queueData(
-                conn,
-                {
-                    kind = "echo_request",
-                    pingId = conn.diagnosticClient.pingId,
-                    sentAt = conn.diagnosticClient.sentAt
-                },
-                nil
-            )
+            conn.diagnosticClient.expectedReplies = DIAGNOSTIC_BURST
+            conn.diagnosticClient.replies = 0
+            conn.diagnosticClient.seen = {}
+
+            for index = 1, DIAGNOSTIC_BURST do
+                self:queueData(
+                    conn,
+                    {
+                        kind = "echo_request",
+                        pingId = conn.diagnosticClient.pingId,
+                        sample = index,
+                        sentAt = conn.diagnosticClient.sentAt
+                    },
+                    nil
+                )
+            end
         end
     elseif not conn.diagnosticServer then
         os.queueEvent(
@@ -303,21 +458,57 @@ function StreamService:markEstablished(conn)
     end
 end
 
-function StreamService:trySendNext(conn)
+function StreamService:startFin(conn)
     if not conn or
         conn.state ~= "ESTABLISHED" or
-        conn.pending
+        conn.controlPending or
+        conn.inflightCount > 0 or
+        #conn.sendQueue > 0 or
+        not conn.closeRequested
     then
         return false
     end
 
-    local job = table.remove(conn.sendQueue, 1)
+    local segment, err = CCTP.newSegment(
+        CCTP.TYPE_FIN,
+        conn.id,
+        conn.sendNext,
+        conn.recvNext,
+        {}
+    )
 
-    if job then
+    if not segment then
+        self:failConnection(conn, err or "fin_build_failed")
+        return false
+    end
+
+    conn.state = "FIN_WAIT"
+
+    self:armControl(
+        conn,
+        segment,
+        "fin",
+        conn.closeRequestId,
+        conn.sendNext + 1
+    )
+
+    return true
+end
+
+function StreamService:fillWindow(conn)
+    if not conn or conn.state ~= "ESTABLISHED" then
+        return false
+    end
+
+    local sent = false
+
+    while conn.inflightCount < WINDOW_SIZE and #conn.sendQueue > 0 do
+        local job = table.remove(conn.sendQueue, 1)
+        local seq = conn.sendNext
         local segment, err = CCTP.newSegment(
             CCTP.TYPE_DATA,
             conn.id,
-            conn.sendNext,
+            seq,
             conn.recvNext,
             job.payload
         )
@@ -332,52 +523,34 @@ function StreamService:trySendNext(conn)
                     conn.id
                 )
             end
+        else
+            conn.sendNext = conn.sendNext + 1
 
-            return self:trySendNext(conn)
+            local entry = {
+                seq = seq,
+                expectedAck = seq + 1,
+                segment = segment,
+                requestId = job.requestId,
+                retries = 0,
+                firstSentAt = nil,
+                lastSentAt = 0
+            }
+
+            conn.inflight[seq] = entry
+            conn.inflightCount = conn.inflightCount + 1
+            self:transmitData(conn, entry)
+            sent = true
         end
-
-        self:armPending(
-            conn,
-            segment,
-            "data",
-            job.requestId,
-            conn.sendNext + 1
-        )
-
-        return true
     end
 
-    if conn.closeRequested then
-        local segment, err = CCTP.newSegment(
-            CCTP.TYPE_FIN,
-            conn.id,
-            conn.sendNext,
-            conn.recvNext,
-            {}
-        )
-
-        if not segment then
-            self:failConnection(
-                conn,
-                err or "fin_build_failed"
-            )
-            return false
-        end
-
-        conn.state = "FIN_WAIT"
-
-        self:armPending(
-            conn,
-            segment,
-            "fin",
-            conn.closeRequestId,
-            conn.sendNext + 1
-        )
-
-        return true
+    if conn.closeRequested and
+        conn.inflightCount == 0 and
+        #conn.sendQueue == 0
+    then
+        self:startFin(conn)
     end
 
-    return false
+    return sent
 end
 
 function StreamService:queueData(conn, payload, requestId)
@@ -407,46 +580,45 @@ function StreamService:queueData(conn, payload, requestId)
         return false
     end
 
+    if conn.closeRequested then
+        if requestId then
+            os.queueEvent(
+                "ccbase_cctp_send_result",
+                requestId,
+                false,
+                "connection_closing",
+                conn.id
+            )
+        end
+        return false
+    end
+
     table.insert(conn.sendQueue, {
         payload = payload,
         requestId = requestId
     })
 
-    self:trySendNext(conn)
+    self:fillWindow(conn)
     return true
 end
 
-function StreamService:completePending(conn, ack)
-    local pending = conn and conn.pending
+function StreamService:completeControl(conn, ack)
+    local pending = conn and conn.controlPending
 
     if not pending or ack < pending.expectedAck then
         return false
     end
 
-    conn.sendNext = math.max(
-        conn.sendNext,
-        pending.expectedAck
-    )
-    conn.pending = nil
-    conn.lastActivity = Protocol.nowMs()
-
-    if pending.kind == "data" then
-        if pending.requestId then
-            os.queueEvent(
-                "ccbase_cctp_send_result",
-                pending.requestId,
-                true,
-                pending.segment.segmentId,
-                conn.id
-            )
-        end
-
-        if conn.state == "ESTABLISHED" then
-            self:trySendNext(conn)
-        end
-
-        return true
+    if pending.retries == 0 and pending.firstSentAt then
+        self:updateRtt(
+            conn,
+            Protocol.nowMs() - pending.firstSentAt
+        )
     end
+
+    conn.sendNext = math.max(conn.sendNext, pending.expectedAck)
+    conn.controlPending = nil
+    conn.lastActivity = Protocol.nowMs()
 
     if pending.kind == "syn_ack" then
         self:markEstablished(conn)
@@ -467,6 +639,64 @@ function StreamService:completePending(conn, ack)
         self:emitClosed(conn, "local_close")
         self.connections[conn.id] = nil
         return true
+    end
+
+    return true
+end
+
+function StreamService:ackData(conn, ack)
+    ack = tonumber(ack)
+
+    if not conn or not ack then
+        return false
+    end
+
+    local acknowledged = {}
+
+    for seq, entry in pairs(conn.inflight or {}) do
+        if entry.expectedAck <= ack then
+            table.insert(acknowledged, {
+                seq = seq,
+                entry = entry
+            })
+        end
+    end
+
+    if #acknowledged == 0 then
+        return false
+    end
+
+    table.sort(acknowledged, function(a, b)
+        return a.seq < b.seq
+    end)
+
+    local now = Protocol.nowMs()
+
+    for _, item in ipairs(acknowledged) do
+        local entry = item.entry
+
+        if entry.retries == 0 and entry.firstSentAt then
+            self:updateRtt(conn, now - entry.firstSentAt)
+        end
+
+        conn.inflight[item.seq] = nil
+        conn.inflightCount = math.max(0, conn.inflightCount - 1)
+
+        if entry.requestId then
+            os.queueEvent(
+                "ccbase_cctp_send_result",
+                entry.requestId,
+                true,
+                entry.segment.segmentId,
+                conn.id
+            )
+        end
+    end
+
+    conn.lastActivity = now
+
+    if conn.state == "ESTABLISHED" then
+        self:fillWindow(conn)
     end
 
     return true
@@ -494,7 +724,7 @@ function StreamService:startConnect(
     end
 
     local isn = initialSequence()
-    local conn = {
+    local conn = self:newConnection({
         id = connectionId,
         role = "client",
         state = "SYN_SENT",
@@ -503,17 +733,9 @@ function StreamService:startConnect(
         remotePort = destinationPort,
         sendNext = isn,
         recvNext = 0,
-        pending = nil,
-        sendQueue = {},
-        closeRequested = false,
-        closeRequestId = nil,
         connectRequestId = requestId,
-        connectedAnnounced = false,
-        closeNotified = false,
-        createdAt = Protocol.nowMs(),
-        lastActivity = Protocol.nowMs(),
         diagnosticClient = diagnostic
-    }
+    })
 
     self.connections[connectionId] = conn
 
@@ -530,7 +752,7 @@ function StreamService:startConnect(
         return nil, err
     end
 
-    self:armPending(
+    self:armControl(
         conn,
         segment,
         "syn",
@@ -562,7 +784,7 @@ function StreamService:acceptSyn(
     end
 
     local isn = initialSequence()
-    local conn = {
+    local conn = self:newConnection({
         id = segment.connectionId,
         role = "server",
         state = "SYN_RECEIVED",
@@ -571,18 +793,9 @@ function StreamService:acceptSyn(
         remotePort = sourcePort,
         sendNext = isn,
         recvNext = segment.seq + 1,
-        pending = nil,
-        sendQueue = {},
-        closeRequested = false,
-        closeRequestId = nil,
-        connectRequestId = nil,
-        connectedAnnounced = false,
-        closeNotified = false,
-        createdAt = Protocol.nowMs(),
-        lastActivity = Protocol.nowMs(),
         listenerId = listenerId,
         diagnosticServer = diagnostic
-    }
+    })
 
     self.connections[conn.id] = conn
 
@@ -600,7 +813,7 @@ function StreamService:acceptSyn(
         return false
     end
 
-    self:armPending(
+    self:armControl(
         conn,
         response,
         "syn_ack",
@@ -612,21 +825,28 @@ function StreamService:acceptSyn(
 end
 
 function StreamService:handleClientHandshake(conn, segment)
-    if segment.type ~= CCTP.TYPE_SYN_ACK then
+    local pending = conn and conn.controlPending
+
+    if segment.type ~= CCTP.TYPE_SYN_ACK or
+        not pending or pending.kind ~= "syn"
+    then
         return false
     end
 
-    if not conn.pending or conn.pending.kind ~= "syn" then
+    if segment.ack ~= pending.expectedAck then
         return false
     end
 
-    if segment.ack ~= conn.pending.expectedAck then
-        return false
+    if pending.retries == 0 and pending.firstSentAt then
+        self:updateRtt(
+            conn,
+            Protocol.nowMs() - pending.firstSentAt
+        )
     end
 
     conn.sendNext = segment.ack
     conn.recvNext = segment.seq + 1
-    conn.pending = nil
+    conn.controlPending = nil
 
     self:sendAck(conn, CCTP.TYPE_ACK)
     self:markEstablished(conn)
@@ -640,6 +860,7 @@ function StreamService:deliverData(conn, payload)
             {
                 kind = "echo_reply",
                 pingId = payload.pingId,
+                sample = payload.sample,
                 sentAt = payload.sentAt,
                 responderAt = Protocol.nowMs()
             },
@@ -652,21 +873,37 @@ function StreamService:deliverData(conn, payload)
         payload.kind == "echo_reply" and
         payload.pingId == conn.diagnosticClient.pingId
     then
-        local latency = math.max(
-            0,
-            Protocol.nowMs() - conn.diagnosticClient.sentAt
-        )
+        local sample = tonumber(payload.sample) or 0
 
-        os.queueEvent(
-            "ccbase_cctp_pong",
-            conn.remoteAddress,
-            latency,
-            payload.pingId,
-            conn.id
-        )
+        if not conn.diagnosticClient.seen[sample] then
+            conn.diagnosticClient.seen[sample] = true
+            conn.diagnosticClient.replies = conn.diagnosticClient.replies + 1
+        end
 
-        conn.diagnosticClient.completed = true
-        self:requestClose(conn, nil)
+        if conn.diagnosticClient.replies >=
+            conn.diagnosticClient.expectedReplies and
+            not conn.diagnosticClient.completed
+        then
+            local latency = math.max(
+                0,
+                Protocol.nowMs() - conn.diagnosticClient.sentAt
+            )
+
+            conn.diagnosticClient.completed = true
+
+            os.queueEvent(
+                "ccbase_cctp_pong",
+                conn.remoteAddress,
+                latency,
+                payload.pingId,
+                conn.id,
+                WINDOW_SIZE,
+                math.floor(conn.rto)
+            )
+
+            self:requestClose(conn, nil)
+        end
+
         return true
     end
 
@@ -712,19 +949,23 @@ function StreamService:requestClose(conn, requestId)
 
     conn.closeRequested = true
     conn.closeRequestId = requestId
-    self:trySendNext(conn)
+    self:fillWindow(conn)
     return true
 end
 
 function StreamService:handleEstablishedSegment(conn, segment)
-    if conn.pending and
-        segment.ack >= conn.pending.expectedAck
-    then
-        local removed = conn.pending.kind == "fin"
-        self:completePending(conn, segment.ack)
+    if segment.ack and segment.ack > 0 then
+        if conn.controlPending and
+            segment.ack >= conn.controlPending.expectedAck
+        then
+            local removingConnection = conn.controlPending.kind == "fin"
+            self:completeControl(conn, segment.ack)
 
-        if removed and not self.connections[conn.id] then
-            return true
+            if removingConnection and not self.connections[conn.id] then
+                return true
+            end
+        else
+            self:ackData(conn, segment.ack)
         end
     end
 
@@ -743,9 +984,10 @@ function StreamService:handleEstablishedSegment(conn, segment)
             conn.lastActivity = Protocol.nowMs()
             self:sendAck(conn, CCTP.TYPE_ACK)
             self:deliverData(conn, segment.payload)
-        elseif segment.seq < conn.recvNext then
-            self:sendAck(conn, CCTP.TYPE_ACK)
         else
+            -- Go-Back-N receive side: retain only contiguous data.
+            -- Duplicate or out-of-order data receives the latest
+            -- cumulative ACK and is not delivered to the application.
             self:sendAck(conn, CCTP.TYPE_ACK)
         end
 
@@ -842,15 +1084,15 @@ function StreamService:handleIPPacket(
 
     if conn.state == "SYN_RECEIVED" then
         if payload.type == CCTP.TYPE_SYN then
-            self:transmitPending(conn)
+            self:transmitControl(conn)
             return true
         end
 
         if payload.type == CCTP.TYPE_ACK and
-            conn.pending and
-            payload.ack >= conn.pending.expectedAck
+            conn.controlPending and
+            payload.ack >= conn.controlPending.expectedAck
         then
-            self:completePending(conn, payload.ack)
+            self:completeControl(conn, payload.ack)
             return true
         end
 
@@ -858,6 +1100,10 @@ function StreamService:handleIPPacket(
     end
 
     if conn.state == "TIME_WAIT" then
+        if payload.ack and payload.ack > 0 then
+            self:ackData(conn, payload.ack)
+        end
+
         if payload.type == CCTP.TYPE_FIN and
             payload.seq < conn.recvNext
         then
@@ -865,7 +1111,8 @@ function StreamService:handleIPPacket(
             return true
         end
 
-        return false
+        return payload.type == CCTP.TYPE_ACK or
+            payload.type == CCTP.TYPE_FIN_ACK
     end
 
     if conn.state == "ESTABLISHED" or conn.state == "FIN_WAIT" then
@@ -891,11 +1138,21 @@ function StreamService:handleIPSendResult(requestId, ok, detail)
     local conn = pending.connectionId and
         self.connections[pending.connectionId] or nil
 
-    if conn and conn.pending then
-        conn.pending.lastSentAt = 0
-        self.lastError = tostring(detail or "ip_send_failed")
+    if not conn then
+        return true
     end
 
+    if pending.transmitKind == "control" and conn.controlPending then
+        conn.controlPending.lastSentAt = 0
+    elseif pending.transmitKind == "data" then
+        local entry = conn.inflight[pending.sequence]
+
+        if entry then
+            entry.lastSentAt = 0
+        end
+    end
+
+    self.lastError = tostring(detail or "ip_send_failed")
     return true
 end
 
@@ -1011,28 +1268,58 @@ function StreamService:ping(destination)
     return conn ~= nil, err or pingId
 end
 
+function StreamService:retransmitWindow(conn)
+    local entries = sortedInflight(conn)
+
+    if #entries == 0 then
+        return false
+    end
+
+    for _, entry in ipairs(entries) do
+        entry.retries = entry.retries + 1
+        self:transmitData(conn, entry)
+    end
+
+    conn.rto = clamp(conn.rto * 2, MIN_RTO_MS, MAX_RTO_MS)
+    return true
+end
+
 function StreamService:checkTimers()
     local now = Protocol.nowMs()
     local failed = {}
     local expired = {}
 
     for id, conn in pairs(self.connections) do
-        if conn.pending and
-            now - (conn.pending.lastSentAt or 0) >= RETRANSMIT_MS
+        if conn.state == "TIME_WAIT" and
+            now >= (conn.timeWaitUntil or 0)
         then
-            if conn.pending.retries >= MAX_RETRIES then
+            table.insert(expired, id)
+        elseif conn.controlPending and
+            now - (conn.controlPending.lastSentAt or 0) >= conn.rto
+        then
+            if conn.controlPending.retries >= MAX_RETRIES then
                 table.insert(failed, {
                     conn = conn,
                     reason = "retransmit_timeout"
                 })
             else
-                conn.pending.retries = conn.pending.retries + 1
-                self:transmitPending(conn)
+                conn.controlPending.retries = conn.controlPending.retries + 1
+                conn.rto = clamp(conn.rto * 2, MIN_RTO_MS, MAX_RTO_MS)
+                self:transmitControl(conn)
             end
-        elseif conn.state == "TIME_WAIT" and
-            now >= (conn.timeWaitUntil or 0)
-        then
-            table.insert(expired, id)
+        elseif conn.inflightCount > 0 then
+            local oldest = oldestInflight(conn)
+
+            if oldest and now - (oldest.lastSentAt or 0) >= conn.rto then
+                if oldest.retries >= MAX_RETRIES then
+                    table.insert(failed, {
+                        conn = conn,
+                        reason = "retransmit_timeout"
+                    })
+                else
+                    self:retransmitWindow(conn)
+                end
+            end
         end
     end
 
