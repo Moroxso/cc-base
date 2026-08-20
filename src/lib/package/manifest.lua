@@ -19,6 +19,24 @@ local function validRelativePath(value)
         and not value:find("..", 1, true)
 end
 
+local function validCommit(value)
+    return type(value) == "string"
+        and value:match("^[0-9a-fA-F]+$") ~= nil
+        and (#value == 40 or #value == 64)
+end
+
+local function validHash(value, algorithm)
+    if type(value) ~= "string" or value == "" then
+        return false
+    end
+
+    if algorithm == "git-blob-sha1" then
+        return #value == 40 and value:match("^[0-9a-fA-F]+$") ~= nil
+    end
+
+    return true
+end
+
 local function copyArray(source)
     local result = {}
 
@@ -29,7 +47,7 @@ local function copyArray(source)
     return result
 end
 
-local function normalizeFile(item, packageId, index)
+local function normalizeFile(item, packageId, index, hashAlgorithm)
     if type(item) ~= "table" then
         return nil, "package_file_not_table:" .. packageId .. ":" .. tostring(index)
     end
@@ -46,7 +64,7 @@ local function normalizeFile(item, packageId, index)
         return nil, "package_file_size_invalid:" .. packageId .. ":" .. tostring(index)
     end
 
-    if item.hash ~= nil and (type(item.hash) ~= "string" or item.hash == "") then
+    if item.hash ~= nil and not validHash(item.hash, hashAlgorithm) then
         return nil, "package_file_hash_invalid:" .. packageId .. ":" .. tostring(index)
     end
 
@@ -54,11 +72,11 @@ local function normalizeFile(item, packageId, index)
         source = item.source,
         target = item.target,
         size = item.size,
-        hash = item.hash
+        hash = item.hash and string.lower(item.hash) or nil
     }
 end
 
-local function normalizePackage(item, index)
+local function normalizePackage(item, index, hashAlgorithm)
     if type(item) ~= "table" then
         return nil, "package_not_table:" .. tostring(index)
     end
@@ -104,7 +122,7 @@ local function normalizePackage(item, index)
     local allSizesKnown = true
 
     for fileIndex, fileItem in ipairs(item.files or {}) do
-        local file, err = normalizeFile(fileItem, item.id, fileIndex)
+        local file, err = normalizeFile(fileItem, item.id, fileIndex, hashAlgorithm)
 
         if not file then
             return nil, err
@@ -127,6 +145,18 @@ local function normalizePackage(item, index)
 
     if installedSize == nil and allSizesKnown then
         installedSize = declaredSize
+    end
+
+    if managedBy == "package" then
+        for fileIndex, file in ipairs(files) do
+            if file.size == nil or file.hash == nil then
+                return nil,
+                    "package_file_integrity_missing:"
+                    .. item.id
+                    .. ":"
+                    .. tostring(fileIndex)
+            end
+        end
     end
 
     return {
@@ -157,16 +187,28 @@ function Manifest.validateCatalog(value)
         return nil, "package_catalog_packages_missing"
     end
 
+    local hashAlgorithm = tostring(value.hashAlgorithm or "none")
+    local sourceCommit = value.sourceCommit
+
+    if hashAlgorithm ~= "git-blob-sha1" then
+        return nil, "package_catalog_hash_unsupported"
+    end
+
+    if not validCommit(sourceCommit) then
+        return nil, "package_catalog_source_commit_invalid"
+    end
+
     local result = {
         schema = Manifest.SCHEMA,
         generatedFor = tostring(value.generatedFor or "unknown"),
-        hashAlgorithm = tostring(value.hashAlgorithm or "none"),
+        hashAlgorithm = hashAlgorithm,
+        sourceCommit = string.lower(sourceCommit),
         packages = {},
         byId = {}
     }
 
     for index, item in ipairs(value.packages) do
-        local packageItem, err = normalizePackage(item, index)
+        local packageItem, err = normalizePackage(item, index, hashAlgorithm)
 
         if not packageItem then
             return nil, err
@@ -178,6 +220,14 @@ function Manifest.validateCatalog(value)
 
         result.packages[#result.packages + 1] = packageItem
         result.byId[packageItem.id] = packageItem
+    end
+
+    for _, packageItem in ipairs(result.packages) do
+        for _, dependency in ipairs(packageItem.dependencies) do
+            if not result.byId[dependency] then
+                return nil, "package_dependency_missing:" .. packageItem.id .. ":" .. dependency
+            end
+        end
     end
 
     return result
