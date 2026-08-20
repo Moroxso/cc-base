@@ -1,6 +1,10 @@
 local ccRequire = require("cc.require")
+local Sandbox = require("lib.security.sandbox")
 
 local Runtime = {}
+
+Runtime.PROFILE_TRUSTED = "trusted"
+Runtime.PROFILE_SANDBOX = "sandbox"
 
 local function normalizeDir(path)
     local dir = fs.getDir(path)
@@ -16,7 +20,19 @@ local function normalizeDir(path)
     return dir
 end
 
-local function makeEnvironment(programPath)
+local function validateProgram(path)
+    if type(path) ~= "string" or path == "" then
+        return false, "Invalid program path"
+    end
+
+    if not fs.exists(path) or fs.isDir(path) then
+        return false, "Program not found: " .. path
+    end
+
+    return true
+end
+
+local function makeTrustedEnvironment(programPath)
     local env = setmetatable({}, {
         __index = _ENV
     })
@@ -40,15 +56,13 @@ local function makeEnvironment(programPath)
 end
 
 function Runtime.run(path, ...)
-    if type(path) ~= "string" or path == "" then
-        return false, "Invalid program path"
+    local valid, err = validateProgram(path)
+
+    if not valid then
+        return false, err
     end
 
-    if not fs.exists(path) then
-        return false, "Program not found: " .. path
-    end
-
-    local env = makeEnvironment(path)
+    local env = makeTrustedEnvironment(path)
     local ok = os.run(env, path, ...)
 
     if not ok then
@@ -56,6 +70,33 @@ function Runtime.run(path, ...)
     end
 
     return true
+end
+
+function Runtime.runSandboxed(path, options, ...)
+    local valid, err = validateProgram(path)
+
+    if not valid then
+        return false, err
+    end
+
+    options = type(options) == "table" and options or {}
+    local env, sandboxId, storageRoot = Sandbox.makeEnvironment(path, options)
+    local startedAt = os.epoch and os.epoch("utc") or math.floor(os.clock() * 1000)
+    local ok = os.run(env, path, ...)
+
+    Sandbox.appendExecutionLog({
+        sandboxId = sandboxId,
+        program = path,
+        storageRoot = storageRoot,
+        ok = ok == true,
+        startedAt = startedAt
+    })
+
+    if not ok then
+        return false, "Sandboxed program failed: " .. path, sandboxId
+    end
+
+    return true, sandboxId, storageRoot
 end
 
 return Runtime
