@@ -1,5 +1,5 @@
 {
-  "version": "0.20.1",
+  "version": "0.20.2",
   "files": [
     {"source":"deploy.json","target":"deploy.json"},
     {"source":"src/startup.lua","target":"startup.lua"},
