@@ -80,20 +80,55 @@ function Runtime.runSandboxed(path, options, ...)
     end
 
     options = type(options) == "table" and options or {}
-    local env, sandboxId, storageRoot = Sandbox.makeEnvironment(path, options)
-    local startedAt = os.epoch and os.epoch("utc") or math.floor(os.clock() * 1000)
-    local ok = os.run(env, path, ...)
+
+    local env, sandboxId, storageRoot = Sandbox.makeEnvironment(
+        path,
+        options
+    )
+
+    local startedAt = os.epoch and
+        os.epoch("utc") or
+        math.floor(os.clock() * 1000)
+
+    -- Do not use os.run here. CraftOS deliberately gives os.run
+    -- environments a metatable whose __index points at the host _G.
+    -- That is convenient for normal programs, but defeats a capability
+    -- sandbox because omitted globals (rednet/http/peripheral/etc.) become
+    -- visible again. loadfile's explicit environment is used instead.
+    local chunk, loadError = loadfile(path, "t", env)
+
+    if not chunk then
+        Sandbox.appendExecutionLog({
+            sandboxId = sandboxId,
+            program = path,
+            storageRoot = storageRoot,
+            ok = false,
+            phase = "load",
+            error = tostring(loadError or "load_failed"),
+            startedAt = startedAt
+        })
+
+        return false,
+            "Sandbox load failed: " .. tostring(loadError or "unknown"),
+            sandboxId
+    end
+
+    local ok, runError = pcall(chunk, ...)
 
     Sandbox.appendExecutionLog({
         sandboxId = sandboxId,
         program = path,
         storageRoot = storageRoot,
         ok = ok == true,
+        phase = "run",
+        error = ok and nil or tostring(runError or "runtime_error"),
         startedAt = startedAt
     })
 
     if not ok then
-        return false, "Sandboxed program failed: " .. path, sandboxId
+        return false,
+            "Sandboxed program failed: " .. tostring(runError or "unknown"),
+            sandboxId
     end
 
     return true, sandboxId, storageRoot
