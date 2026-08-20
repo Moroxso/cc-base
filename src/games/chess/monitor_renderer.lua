@@ -5,97 +5,13 @@ local MonitorRenderer = {}
 
 local files = {"a", "b", "c", "d", "e", "f", "g", "h"}
 
--- Large monitor pieces use dedicated glyphs. We intentionally do not enlarge
--- the 4x2 terminal sprite by repeating characters: that makes every line and
--- curve appear two or three times on 4x2/5x4 displays.
-local mediumSprites = {
-    pawn = {
-        "  (o)  ",
-        "   |   ",
-        "  -|-  ",
-        "  ===  "
-    },
-    knight = {
-        "  /^>  ",
-        " /  )  ",
-        "|  /   ",
-        "|_/    "
-    },
-    bishop = {
-        "   ^   ",
-        "  <O>  ",
-        "   |   ",
-        "  ===  "
-    },
-    rook = {
-        "_|_|_|_",
-        "|_____|"," 
-        " |   | ",
-        "_|___|_"
-    },
-    queen = {
-        "* ^ ^ *",
-        "  VVV  ",
-        "  | |  ",
-        " _|_|_ "
-    },
-    king = {
-        "   +   ",
-        "  +++  ",
-        "   |   ",
-        "  ===  "
-    }
-}
-
-local largeSprites = {
-    pawn = {
-        "   (o)   ",
-        "  (   )  ",
-        "   ---   ",
-        "    |    ",
-        "   -|-   ",
-        "  =====  "
-    },
-    knight = {
-        "   /^>   ",
-        "  /  )   ",
-        " /   )__ ",
-        "|       )",
-        "|    ___/",
-        "|___/    "
-    },
-    bishop = {
-        "    ^    ",
-        "   /O/   ",
-        "  < O >  ",
-        "    |    ",
-        "   /|/   ",
-        "  =====  "
-    },
-    rook = {
-        " _|_|_|_ ",
-        " |_____| ",
-        "  |   |  ",
-        "  |   |  ",
-        " _|   |_ ",
-        "|_______|"
-    },
-    queen = {
-        "*  ^ ^  *",
-        "  V V V  ",
-        "   VVV   ",
-        "    |    ",
-        "   | |   ",
-        "  =====  "
-    },
-    king = {
-        "    +    ",
-        "   +++   ",
-        "    +    ",
-        "    |    ",
-        "   /|/   ",
-        "  =====  "
-    }
+local compactSprites = {
+    pawn = {" o ", " ^ "},
+    knight = {"/> ", "/_ "},
+    bishop = {"/\\ ", "<> "},
+    rook = {"[#]", "|_|"},
+    queen = {"*^*", "\\_/"},
+    king = {" + ", "/_\\"}
 }
 
 local function clamp(value, minimum, maximum)
@@ -163,53 +79,43 @@ local function squareBackground(game, x, y)
     return background
 end
 
-local function maxRowWidth(rows)
-    local width = 0
-
-    for _, text in ipairs(rows or {}) do
-        width = math.max(width, #text)
-    end
-
-    return width
-end
-
 local function drawRows(target, rows, x, y, cellWidth, cellHeight, foreground, background)
-    local spriteWidth = maxRowWidth(rows)
+    local spriteWidth = #rows[1]
     local spriteHeight = #rows
     local px = x + math.max(0, math.floor((cellWidth - spriteWidth) / 2))
     local py = y + math.max(0, math.floor((cellHeight - spriteHeight) / 2))
 
     for row, text in ipairs(rows) do
-        if row <= cellHeight and py + row - 1 < y + cellHeight then
+        if row <= cellHeight then
             write(target, px, py + row - 1, text, foreground, background, cellWidth)
         end
     end
 end
 
-local function chooseSprite(piece, cellWidth, cellHeight)
-    local kind = piece.kind
-
-    if cellWidth >= 9 and cellHeight >= 6 and largeSprites[kind] then
-        return largeSprites[kind]
-    end
-
-    if cellWidth >= 7 and cellHeight >= 4 and mediumSprites[kind] then
-        return mediumSprites[kind]
-    end
-
-    if cellWidth >= 4 and cellHeight >= 2 then
-        return Pieces.sprite(piece)
-    end
-
-    return nil
-end
-
 local function drawPiece(target, piece, x, y, cellWidth, cellHeight, background)
     local foreground = piece.color == Pieces.WHITE and colors.white or colors.black
-    local sprite = chooseSprite(piece, cellWidth, cellHeight)
 
-    if sprite then
+    if cellWidth >= 3 and cellHeight >= 2 and cellWidth < 4 then
+        local compact = compactSprites[piece.kind]
+
+        if compact then
+            drawRows(target, compact, x, y, cellWidth, cellHeight, foreground, background)
+            return
+        end
+    end
+
+    local sprite = Pieces.sprite(piece)
+
+    -- Keep one logical ASCII glyph per character on every monitor size.
+    -- The previous renderer enlarged pieces by repeating each character and
+    -- each row, which is why 5x4 monitors showed doubled/tripled figures.
+    if cellWidth >= 4 and cellHeight >= 2 then
         drawRows(target, sprite, x, y, cellWidth, cellHeight, foreground, background)
+        return
+    end
+
+    if cellWidth >= 3 and cellHeight >= 2 and compactSprites[piece.kind] then
+        drawRows(target, compactSprites[piece.kind], x, y, cellWidth, cellHeight, foreground, background)
         return
     end
 
