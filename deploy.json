@@ -1,11 +1,11 @@
 {
   "schema": 2,
   "version": "0.21.0-alpha.4",
-  "sourceCommit": "64e3ab47e5802ce90c7d25b1bc5a9cd8e55d348c",
+  "sourceCommit": "f56c93c2c281026513fb8ba0c991d883fc749e9e",
   "hashAlgorithm": "git-blob-sha1",
   "files": [
     {"source":"deploy.json","target":"deploy.json","control":"manifest"},
-    {"source":"packages.json","target":"packages.json","size":7061,"hash":"8df61be8883dbee16f101082fe2ee26ad4dd7889"},
+    {"source":"packages.json","target":"packages.json","size":7061,"hash":"780f96f5b6b2aeade33be4514faa8fe701ef25b1"},
     {"source":"src/startup.lua","target":"startup.lua","size":1054,"hash":"7e6758a09ddcd4ea2954785cc0b8a4ad3c71d8f9","bootstrapProtected":true},
     {"source":"src/main.lua","target":"main.lua","size":13469,"hash":"bf0b69ffa983686ac31cbc2b01aeb11123720a4e"},
     {"source":"src/update.lua","target":"update.lua","size":2312,"hash":"d34d30d4a278a8cd12f5cf020cd55deb9924f81e","bootstrapProtected":true},
@@ -15,7 +15,7 @@
     {"source":"src/lib/automation.lua","target":"lib/automation.lua","size":8826,"hash":"1f54f74473fc697bb67c8ed3da282faaf6b7b790"},
     {"source":"src/lib/system/updater.lua","target":"lib/system/updater.lua","size":32254,"hash":"218011620bfd27abc1c7b3d1805451e97b20b0d2","selfEngine":true},
     {"source":"src/lib/package/hash.lua","target":"lib/package/hash.lua","size":3659,"hash":"b2b7632675b861562a545273a21f258b4cd42b2d"},
-    {"source":"src/lib/package/journal.lua","target":"lib/package/journal.lua","size":6939,"hash":"738bd668e56ccdccf7a26a2e7fe9c5e99b78c5ed"},
+    {"source":"src/lib/package/journal.lua","target":"lib/package/journal.lua","size":7108,"hash":"767dae96baa1b39590b1d282f521de9500394e0c"},
     {"source":"src/lib/package/manager.lua","target":"lib/package/manager.lua","size":36553,"hash":"b43566118dad45327449e0ce40e8cf93c09de571"},
     {"source":"src/lib/package/manifest.lua","target":"lib/package/manifest.lua","size":7230,"hash":"ad06d900faeb8753bef71e9ec31c52985f0a291e"},
     {"source":"src/lib/package/registry.lua","target":"lib/package/registry.lua","size":8300,"hash":"225525ae80dd36b3df1d53dff1ea82a6cf825167"},
