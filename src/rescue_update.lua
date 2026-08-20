@@ -255,7 +255,7 @@ local available = freeSpace()
 print("")
 print(
     "Changed: "
-    .. tostring(#changes))
+    .. tostring(#changes)
     .. "/"
     .. tostring(#manifest.files)
 )
