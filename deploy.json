@@ -1,5 +1,5 @@
 {
-  "version": "0.21.0-alpha.2",
+  "version": "0.21.0-alpha.3",
   "files": [
     {"source":"deploy.json","target":"deploy.json"},
     {"source":"packages.json","target":"packages.json"},
@@ -14,6 +14,7 @@
     {"source":"src/lib/package/manifest.lua","target":"lib/package/manifest.lua"},
     {"source":"src/lib/package/registry.lua","target":"lib/package/registry.lua"},
     {"source":"src/lib/package/storage.lua","target":"lib/package/storage.lua"},
+    {"source":"src/lib/package/journal.lua","target":"lib/package/journal.lua"},
     {"source":"src/lib/package/manager.lua","target":"lib/package/manager.lua"},
     {"source":"src/lib/gui/button.lua","target":"lib/gui/button.lua"},
     {"source":"src/lib/gui/screen.lua","target":"lib/gui/screen.lua"},
