@@ -1,13 +1,17 @@
 local ENGINE_PATH = "/lib/system/updater.lua"
 local ENGINE_NEXT = "/.cc_updater_next.lua"
 local ENGINE_PREV = "/.cc_updater_prev.lua"
+local PROGRAM_ENV = _ENV
 
 local function loadEngine(path)
     if not fs.exists(path) or fs.isDir(path) then
         return nil, "missing"
     end
 
-    local chunk, loadError = loadfile(path)
+    -- CC:Tweaked injects require/package into each program environment. A raw
+    -- loadfile(path) does not reliably preserve that environment in the
+    -- Polymania port, so pass it explicitly to updater modules.
+    local chunk, loadError = loadfile(path, "t", PROGRAM_ENV)
 
     if not chunk then
         return nil, tostring(loadError or "load_failed")
