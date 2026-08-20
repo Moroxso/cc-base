@@ -5,6 +5,9 @@ local MonitorRenderer = {}
 
 local files = {"a", "b", "c", "d", "e", "f", "g", "h"}
 
+-- Monitor glyphs are deliberately hand-drawn instead of scaling the
+-- terminal 4x2 sprite. Repeating ASCII characters horizontally/vertically
+-- makes large monitor pieces look doubled or tripled.
 local compactSprites = {
     pawn = {" o ", " ^ "},
     knight = {"/> ", "/_ "},
@@ -12,6 +15,97 @@ local compactSprites = {
     rook = {"[#]", "|_|"},
     queen = {"*^*", "\\_/"},
     king = {" + ", "/_\\"}
+}
+
+local mediumSprites = {
+    pawn = {
+        "  ___  ",
+        " /   \\ ",
+        "  \\_/  ",
+        "  /_\\  "
+    },
+    knight = {
+        "  /\\   ",
+        " /  \\_ ",
+        "|  o  \\",
+        " \\___/ "
+    },
+    bishop = {
+        "  /\\   ",
+        " /  \\  ",
+        " \\()/  ",
+        " _||_  "
+    },
+    rook = {
+        "_|_|_|_",
+        "|_____|
+",
+        " |   | ",
+        "_|___|_"
+    },
+    queen = {
+        "* * * *",
+        " \\| |/ ",
+        "  \\_/  ",
+        " _/ \\_ "
+    },
+    king = {
+        "   +   ",
+        "  +++  ",
+        "  / \\  ",
+        "_/___\\_"
+    }
+}
+
+local largeSprites = {
+    pawn = {
+        "   ___   ",
+        "  /   \\  ",
+        "  \\___/  ",
+        "    |    ",
+        "   / \\   ",
+        "  /___\\  "
+    },
+    knight = {
+        "    /\\   ",
+        "   /  \\_ ",
+        "  /  o  \\",
+        " /      |",
+        " \\__   /",
+        "  /___/  "
+    },
+    bishop = {
+        "    /\\   ",
+        "   /  \\  ",
+        "   \\()/  ",
+        "    ||   ",
+        "   /  \\  ",
+        " _/____\\_"
+    },
+    rook = {
+        " _|_|_|_ ",
+        " |_____| ",
+        "  |   |  ",
+        "  |   |  ",
+        " _|   |_ ",
+        "|_______|"
+    },
+    queen = {
+        "*  * *  *",
+        " \\ | | / ",
+        "  \\| |/  ",
+        "   \\_/   ",
+        "  /   \\  ",
+        "_/_____\\_"
+    },
+    king = {
+        "    +    ",
+        "   +++   ",
+        "    |    ",
+        "   / \\   ",
+        "  /   \\  ",
+        "_/_____\\_"
+    }
 }
 
 local function clamp(value, minimum, maximum)
@@ -79,68 +173,64 @@ local function squareBackground(game, x, y)
     return background
 end
 
-local function scaleSprite(sprite, scale)
-    local rows = {}
+local function rowWidth(rows)
+    local width = 0
 
-    for sourceRow = 1, #sprite do
-        local expanded = ""
-        local text = sprite[sourceRow]
-
-        for index = 1, #text do
-            expanded = expanded .. string.rep(text:sub(index, index), scale)
-        end
-
-        for _ = 1, scale do
-            table.insert(rows, expanded)
-        end
+    for _, text in ipairs(rows or {}) do
+        width = math.max(width, #text)
     end
 
-    return rows
+    return width
 end
 
 local function drawRows(target, rows, x, y, cellWidth, cellHeight, foreground, background)
-    local spriteWidth = #rows[1]
+    local spriteWidth = rowWidth(rows)
     local spriteHeight = #rows
     local px = x + math.max(0, math.floor((cellWidth - spriteWidth) / 2))
     local py = y + math.max(0, math.floor((cellHeight - spriteHeight) / 2))
 
     for row, text in ipairs(rows) do
-        if row <= cellHeight then
+        if row <= cellHeight and py + row - 1 < y + cellHeight then
             write(target, px, py + row - 1, text, foreground, background, cellWidth)
         end
     end
 end
 
-local function drawPiece(target, piece, x, y, cellWidth, cellHeight, background)
-    local foreground = piece.color == Pieces.WHITE and colors.white or colors.black
+local function chooseSprite(piece, cellWidth, cellHeight)
+    local kind = piece.kind
 
-    if cellWidth >= 3 and cellHeight >= 2 and cellWidth < 4 then
-        local compact = compactSprites[piece.kind]
-
-        if compact then
-            drawRows(target, compact, x, y, cellWidth, cellHeight, foreground, background)
-            return
-        end
+    if cellWidth >= 9 and cellHeight >= 6 and largeSprites[kind] then
+        return largeSprites[kind]
     end
 
-    local sprite = Pieces.sprite(piece)
-    local scale = math.floor(math.min(cellWidth / 4, cellHeight / 2))
+    if cellWidth >= 7 and cellHeight >= 4 and mediumSprites[kind] then
+        return mediumSprites[kind]
+    end
 
-    if scale < 1 then
-        if cellWidth >= 3 and cellHeight >= 2 and compactSprites[piece.kind] then
-            drawRows(target, compactSprites[piece.kind], x, y, cellWidth, cellHeight, foreground, background)
-            return
-        end
+    if cellWidth >= 4 and cellHeight >= 2 then
+        return Pieces.sprite(piece)
+    end
 
-        local symbol = Pieces.symbol(piece):upper()
-        local px = x + math.floor((cellWidth - 1) / 2)
-        local py = y + math.floor((cellHeight - 1) / 2)
-        write(target, px, py, symbol, foreground, background)
+    if cellWidth >= 3 and cellHeight >= 2 and compactSprites[kind] then
+        return compactSprites[kind]
+    end
+
+    return nil
+end
+
+local function drawPiece(target, piece, x, y, cellWidth, cellHeight, background)
+    local foreground = piece.color == Pieces.WHITE and colors.white or colors.black
+    local sprite = chooseSprite(piece, cellWidth, cellHeight)
+
+    if sprite then
+        drawRows(target, sprite, x, y, cellWidth, cellHeight, foreground, background)
         return
     end
 
-    scale = clamp(scale, 1, 4)
-    drawRows(target, scaleSprite(sprite, scale), x, y, cellWidth, cellHeight, foreground, background)
+    local symbol = Pieces.symbol(piece):upper()
+    local px = x + math.floor((cellWidth - 1) / 2)
+    local py = y + math.floor((cellHeight - 1) / 2)
+    write(target, px, py, symbol, foreground, background)
 end
 
 local function statusText(game)
