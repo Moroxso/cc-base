@@ -135,28 +135,6 @@ local function showStatus()
     })
 end
 
-local function showHello()
-    ui.drawHeader(APP_TITLE)
-
-    ui.centerText(
-        term,
-        8,
-        "Hello!",
-        colors.lime
-    )
-
-    ui.centerText(
-        term,
-        10,
-        (os.getComputerLabel() or "Computer") .. " is online.",
-        colors.white
-    )
-
-    ui.drawFooter("LEFT / SHIFT - Back")
-
-    waitForBack()
-end
-
 local function showProgramError(name, detail)
     ui.drawHeader(APP_TITLE)
 
@@ -417,7 +395,7 @@ local function createDashboardScreen()
     end
 
     add("status", "System Status", 1, 1, colors.gray)
-    add("hello", "Hello", 2, 1, colors.gray)
+    add("files", "Files", 2, 1, colors.green)
     add("games", "Games", 1, 2, colors.purple)
     add("redstone", "Redstone", 2, 2, colors.red)
     add("automation", "Automation", 1, 3, colors.orange, colors.black)
@@ -468,8 +446,11 @@ end
 local function activateDashboardAction(action)
     if action == "status" then
         showStatus()
-    elseif action == "hello" then
-        showHello()
+    elseif action == "files" then
+        runProgram(
+            "BASE Commander",
+            "/apps/explorer.lua"
+        )
     elseif action == "games" then
         showGames()
     elseif action == "redstone" then
