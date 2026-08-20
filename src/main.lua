@@ -4,12 +4,12 @@ local Automation = require("lib.automation")
 local Screen = require("lib.gui.screen")
 local PackageManager = require("lib.package.manager")
 local ServiceSupervisor = require("lib.system.service_supervisor")
+local StatusUI = require("lib.system.status_ui")
 local NetworkService = require("lib.net.service")
 local IPService = require("lib.net.ip_service")
 local DatagramService = require("lib.net.datagram_service")
 local StreamService = require("lib.net.stream_service")
 local SecurityService = require("lib.security.service")
-local Address = require("lib.net.address")
 
 local APP_TITLE = "BASE CONTROL SYSTEM"
 local AUTOMATION_PATH = "/data/automation.json"
@@ -126,120 +126,13 @@ local function readVersion()
 end
 
 local function showStatus()
-    ui.drawHeader(APP_TITLE)
-
-    ui.centerText(
-        term,
-        5,
-        "SYSTEM STATUS",
-        colors.cyan
-    )
-
-    term.setCursorPos(4, 7)
-    term.setTextColor(colors.lime)
-    term.write("STATUS: ONLINE")
-
-    ui.resetColors(term)
-
-    term.setCursorPos(4, 9)
-    term.write("Computer ID: " .. os.getComputerID())
-
-    local label = os.getComputerLabel()
-
-    term.setCursorPos(4, 10)
-    term.write("Computer name: " .. (label or "NOT SET"))
-
-    local width, height = term.getSize()
-
-    term.setCursorPos(4, 11)
-    term.write("Terminal: " .. width .. "x" .. height)
-
-    term.setCursorPos(4, 12)
-    term.write("Version: " .. readVersion())
-
-    term.setCursorPos(4, 13)
-
-    if http then
-        term.setTextColor(colors.lime)
-        term.write("HTTP API: AVAILABLE")
-    else
-        term.setTextColor(colors.red)
-        term.write("HTTP API: UNAVAILABLE")
-    end
-
-    ui.resetColors(term)
-
-    local config = Automation.loadConfig(AUTOMATION_PATH)
-
-    term.setCursorPos(4, 14)
-    term.setTextColor(
-        config.enabled and colors.lime or colors.red
-    )
-    term.write(
-        "Automation: " ..
-        (config.enabled and "ON" or "OFF") ..
-        " (" .. #config.rules .. " rules)"
-    )
-
-    term.setCursorPos(4, 15)
-
-    if rednet and rednet.isOpen and rednet.isOpen() then
-        term.setTextColor(colors.lime)
-        term.write("Network: REDNET OPEN")
-    else
-        term.setTextColor(colors.orange)
-        term.write("Network: NO OPEN MODEM")
-    end
-
-    term.setCursorPos(4, 16)
-    term.setTextColor(colors.cyan)
-    term.write("CCIP: " .. tostring(Address.localAddress() or "UNAVAILABLE"))
-
-    if height >= 19 then
-        term.setCursorPos(4, 17)
-
-        if packageRecoveryError then
-            term.setTextColor(colors.orange)
-            term.write("Packages: RECOVERY NEEDED")
-        else
-            local pending = packages:pendingTransaction()
-
-            if pending then
-                term.setTextColor(colors.orange)
-                term.write("Packages: TRANSACTION PENDING")
-            else
-                term.setTextColor(colors.lime)
-                term.write("Packages: READY")
-            end
-        end
-    end
-
-    if height >= 20 then
-        local serviceSummary = supervisor:summary()
-
-        term.setCursorPos(4, 18)
-
-        if serviceSummary.failed > 0 then
-            term.setTextColor(colors.red)
-        elseif serviceSummary.restarting > 0 or serviceSummary.starting > 0 then
-            term.setTextColor(colors.orange)
-        elseif serviceSummary.running == serviceSummary.total then
-            term.setTextColor(colors.lime)
-        else
-            term.setTextColor(colors.orange)
-        end
-
-        term.write(string.format(
-            "Services: %d/%d RUNNING",
-            serviceSummary.running,
-            serviceSummary.total
-        ))
-    end
-
-    ui.resetColors(term)
-    ui.drawFooter("LEFT / SHIFT - Back")
-
-    waitForBack()
+    StatusUI.show({
+        title = APP_TITLE,
+        automationPath = AUTOMATION_PATH,
+        packages = packages,
+        supervisor = supervisor,
+        packageRecoveryError = packageRecoveryError
+    })
 end
 
 local function showHello()
