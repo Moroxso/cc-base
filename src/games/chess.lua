@@ -38,9 +38,9 @@ local function makeScreen()
         id = "local",
         label = "Local PvP",
         x = x,
-        y = 6,
+        y = 5,
         width = buttonWidth,
-        height = 2,
+        height = 1,
         backgroundColor = colors.brown,
         textColor = colors.white
     })
@@ -49,11 +49,33 @@ local function makeScreen()
         id = "network",
         label = "Network PvP",
         x = x,
-        y = 10,
+        y = 7,
         width = buttonWidth,
-        height = 2,
+        height = 1,
         backgroundColor = colors.blue,
         textColor = colors.white
+    })
+
+    screen:addButton({
+        id = "tournament",
+        label = "Tournament",
+        x = x,
+        y = 9,
+        width = buttonWidth,
+        height = 1,
+        backgroundColor = colors.purple,
+        textColor = colors.white
+    })
+
+    screen:addButton({
+        id = "spectator",
+        label = "Tournament Spectator",
+        x = x,
+        y = 11,
+        width = buttonWidth,
+        height = 1,
+        backgroundColor = colors.cyan,
+        textColor = colors.black
     })
 
     screen:addButton({
@@ -62,7 +84,7 @@ local function makeScreen()
         x = x,
         y = 14,
         width = buttonWidth,
-        height = 2,
+        height = 1,
         backgroundColor = colors.gray,
         textColor = colors.white
     })
@@ -71,7 +93,7 @@ local function makeScreen()
 end
 
 local screen = makeScreen()
-local message = "Choose local board or CCTP multiplayer."
+local message = "Local, network, tournament or read-only spectator mode."
 
 local function draw()
     resetColors()
@@ -79,7 +101,7 @@ local function draw()
     drawHeader()
     screen:draw()
 
-    term.setCursorPos(2, 17)
+    term.setCursorPos(2, 16)
     term.setTextColor(colors.lightGray)
     term.write(message:sub(1, width - 2))
 
@@ -99,7 +121,7 @@ local function launch(path, name)
     if not ok then
         message = name .. " failed: " .. tostring(err)
     else
-        message = "Choose local board or CCTP multiplayer."
+        message = "Local, network, tournament or read-only spectator mode."
     end
 end
 
@@ -127,6 +149,12 @@ while running do
             draw()
         elseif action == "network" then
             launch("/games/chess_net.lua", "Network Chess")
+            draw()
+        elseif action == "tournament" then
+            launch("/games/chess_tournament.lua", "Tournament Chess")
+            draw()
+        elseif action == "spectator" then
+            launch("/games/chess_spectator.lua", "Chess Spectator")
             draw()
         elseif action == "back" then
             running = false
