@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "version": "0.23.0-alpha.1",
-  "sourceCommit": "ce437da543567f9056fa72296478f7c7622ebe59",
+  "sourceCommit": "08d49d21e8ebcddc54bfd40ab56debba8a7f9a19",
   "hashAlgorithm": "git-blob-sha1",
   "files": [
     {"source":"deploy.json","target":"deploy.json","control":"manifest"},
@@ -14,12 +14,12 @@
     {"source":"src/lib/runtime.lua","target":"lib/runtime.lua","size":3232,"hash":"af8c49a065c4d7d1aa526abc6e67e7403eedc4e4"},
     {"source":"src/lib/automation.lua","target":"lib/automation.lua","size":8826,"hash":"1f54f74473fc697bb67c8ed3da282faaf6b7b790"},
     {"source":"src/lib/defense/protocol.lua","target":"lib/defense/protocol.lua","size":3484,"hash":"f0ba50752c8243bb3a31ad887139fa7e6996190a"},
-    {"source":"src/lib/defense/controller.lua","target":"lib/defense/controller.lua","size":18827,"hash":"67bcc5b2b3d85539d38d47ce12648666f08aa32a"},
+    {"source":"src/lib/defense/controller.lua","target":"lib/defense/controller.lua","size":19655,"hash":"917f65adbc08bdf3b213f0b5ff9e17c7f9786da7"},
     {"source":"src/lib/system/updater.lua","target":"lib/system/updater.lua","size":18018,"hash":"294435321a6309d46199198cb96c17001c11c55c","selfEngine":true},
     {"source":"src/lib/system/updater_core.lua","target":"lib/system/updater_core.lua","size":32254,"hash":"218011620bfd27abc1c7b3d1805451e97b20b0d2"},
     {"source":"src/lib/system/service_supervisor.lua","target":"lib/system/service_supervisor.lua","size":20114,"hash":"d6dde08c3d48b84b927e0b55d22a6fd3163acecc"},
     {"source":"src/lib/system/service_control.lua","target":"lib/system/service_control.lua","size":4332,"hash":"a7721d32335c4367f252d9e87bc304346282aa25"},
-    {"source":"src/lib/system/status_ui.lua","target":"lib/system/status_ui.lua","size":24224,"hash":"8d2e6d4f96fedd042099677abbf43ef5445d95ef"},
+    {"source":"src/lib/system/status_ui.lua","target":"lib/system/status_ui.lua","size":24424,"hash":"65bfc40663ee4615d1b4468ecac7c26a92a60c26"},
     {"source":"src/lib/system/storage_manager.lua","target":"lib/system/storage_manager.lua","size":15968,"hash":"b3b2023b2779439f02059c624f2b7dcb5c692340"},
     {"source":"src/lib/system/storage_inspector.lua","target":"lib/system/storage_inspector.lua","size":3566,"hash":"3459b24b966049a913ca3094f8abaee3dd5ded21"},
     {"source":"src/lib/package/hash.lua","target":"lib/package/hash.lua","size":3659,"hash":"b2b7632675b861562a545273a21f258b4cd42b2d"},
