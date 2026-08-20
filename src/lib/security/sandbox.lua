@@ -54,6 +54,9 @@ local function writeJson(path, value)
     local dir = fs.getDir(path)
 
     if dir ~= "" then
+        if dir:sub(1, 1) ~= "/" then
+            dir = "/" .. dir
+        end
         ensureDir(dir)
     end
 
@@ -76,7 +79,7 @@ end
 
 function Sandbox.storageRoot(id)
     id = sanitizeId(id)
-    return fs.combine(Sandbox.DATA_ROOT, id)
+    return Sandbox.DATA_ROOT .. "/" .. id
 end
 
 function Sandbox.clearStorage(id)
@@ -125,7 +128,7 @@ local function joinHost(root, path)
         return root, normalized
     end
 
-    return fs.combine(root, normalized:sub(2)), normalized
+    return root .. "/" .. normalized:sub(2), normalized
 end
 
 local function virtualDir(path)
