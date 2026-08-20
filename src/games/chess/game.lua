@@ -40,6 +40,12 @@ local function validPromotion(kind)
     return false
 end
 
+local function validSquareCoordinate(value)
+    return type(value) == "number" and
+        value == math.floor(value) and
+        value >= 1 and value <= 8
+end
+
 local function copyMove(move)
     if type(move) ~= "table" then
         return nil
@@ -234,8 +240,10 @@ function Game:applyMoveCoordinates(fromX, fromY, toX, toY, promotionKind)
         return false, "game_not_ready"
     end
 
-    if not self.board:inBounds(fromX, fromY) or
-        not self.board:inBounds(toX, toY)
+    if not validSquareCoordinate(fromX) or
+        not validSquareCoordinate(fromY) or
+        not validSquareCoordinate(toX) or
+        not validSquareCoordinate(toY)
     then
         return false, "square_out_of_bounds"
     end
@@ -457,18 +465,24 @@ function Game:importState(snapshot)
 
     if type(snapshot.state.enPassant) == "table" then
         local ep = snapshot.state.enPassant
+        local ex = tonumber(ep.x)
+        local ey = tonumber(ep.y)
+        local px = tonumber(ep.pawnX)
+        local py = tonumber(ep.pawnY)
 
-        if not board:inBounds(tonumber(ep.x) or 0, tonumber(ep.y) or 0) or
-            not board:inBounds(tonumber(ep.pawnX) or 0, tonumber(ep.pawnY) or 0)
+        if not validSquareCoordinate(ex) or
+            not validSquareCoordinate(ey) or
+            not validSquareCoordinate(px) or
+            not validSquareCoordinate(py)
         then
             return false, "invalid_snapshot_en_passant"
         end
 
         state.enPassant = {
-            x = ep.x,
-            y = ep.y,
-            pawnX = ep.pawnX,
-            pawnY = ep.pawnY
+            x = ex,
+            y = ey,
+            pawnX = px,
+            pawnY = py
         }
     end
 
