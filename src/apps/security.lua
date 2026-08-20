@@ -2,6 +2,7 @@ local Button = require("lib.gui.button")
 local List = require("lib.gui.list")
 local Runtime = require("lib.runtime")
 local Integrity = require("lib.security.integrity")
+local Sandbox = require("lib.security.sandbox")
 
 local width, height = term.getSize()
 
@@ -10,7 +11,7 @@ if width < 48 or height < 18 then
 end
 
 local running = true
-local message = "Integrity monitor protects deployed system files."
+local message = "Integrity monitor + capability sandbox are active."
 local status = Integrity.loadStatus() or Integrity.scan()
 
 local function resetColors()
@@ -32,6 +33,24 @@ local function line(y, text, color, x, maxWidth)
     term.setCursorPos(x, y)
     term.write(text .. string.rep(" ", math.max(0, maxWidth - #text)))
     resetColors()
+end
+
+local function readJson(path)
+    if not fs.exists(path) or fs.isDir(path) then
+        return nil
+    end
+
+    local file = fs.open(path, "r")
+
+    if not file then
+        return nil
+    end
+
+    local raw = file.readAll()
+    file.close()
+
+    local ok, value = pcall(textutils.unserializeJSON, raw)
+    return ok and type(value) == "table" and value or nil
 end
 
 local function issueLabel(item)
@@ -70,7 +89,8 @@ local scanButton = button("scan", "Scan", 2, 14, 10, colors.blue)
 local quarantineButton = button("quarantine", "Quarantine", 13, 14, 13, colors.orange, colors.black)
 local repairButton = button("repair", "Repair", 27, 14, 10, colors.green, colors.black)
 local backButton = button("back", "Back", 38, 14, math.max(10, width - 39), colors.red)
-local clearButton = button("clear", "Clear Log", 2, 15, 12, colors.gray)
+local clearButton = button("clear", "Clear Log", 2, 15, 11, colors.gray)
+local sandboxButton = button("sandbox", "Sandbox Test", 14, 15, 15, colors.purple)
 
 local function refresh()
     status = Integrity.loadStatus() or Integrity.scan()
@@ -130,7 +150,7 @@ local function draw()
     line(
         6,
         "QUARANTINE: " .. tostring(Integrity.quarantineCount()) ..
-            "   HASH: DJB2-32 (integrity detection, not cryptographic trust)",
+            "   SANDBOX: CAPABILITY ISOLATION",
         colors.cyan
     )
 
@@ -150,7 +170,7 @@ local function draw()
 
     line(
         13,
-        "Modified/missing system files: use Repair. Unexpected files may be quarantined.",
+        "Repair restores system files. Sandbox denies host fs/network/shell/http.",
         colors.lightGray
     )
 
@@ -160,8 +180,9 @@ local function draw()
     repairButton:draw(term)
     backButton:draw(term)
     clearButton:draw(term)
+    sandboxButton:draw(term)
 
-    line(16, "Network payload quarantine never auto-runs received content.", colors.yellow)
+    line(16, "Untrusted storage is virtualized under /data/sandbox/<app>.", colors.yellow)
     line(17, message, colors.gray)
     drawFooter()
 end
@@ -197,6 +218,49 @@ local function repair()
     end
 end
 
+local function runSandboxTest()
+    message = "Running isolated capability probe..."
+    draw()
+
+    local ok, detail = Runtime.runSandboxed(
+        "/apps/sandbox_probe.lua",
+        {
+            id = "security-probe",
+            resetStorage = true
+        }
+    )
+
+    local reportPath = fs.combine(
+        Sandbox.storageRoot("security-probe"),
+        "report.json"
+    )
+    local report = readJson(reportPath)
+    local integrity = Integrity.scan()
+
+    if ok and report and
+        tonumber(report.passed) == tonumber(report.total) and
+        integrity.ok == true
+    then
+        message = string.format(
+            "Sandbox PASS %s/%s; host integrity CLEAN.",
+            tostring(report.passed),
+            tostring(report.total)
+        )
+    elseif not ok then
+        message = "Sandbox runtime failed: " .. tostring(detail)
+    elseif not report then
+        message = "Sandbox probe report missing."
+    elseif integrity.ok ~= true then
+        message = "Sandbox test caused host integrity ALERT."
+    else
+        message = string.format(
+            "Sandbox FAIL %s/%s checks passed.",
+            tostring(report.passed or "?"),
+            tostring(report.total or "?")
+        )
+    end
+end
+
 local refreshTimer = os.startTimer(0.5)
 draw()
 
@@ -222,6 +286,9 @@ while running do
         elseif clearButton:contains(b, c) then
             os.queueEvent("ccbase_security_clear_log")
             message = "Clearing integrity incident log..."
+            redraw = true
+        elseif sandboxButton:contains(b, c) then
+            runSandboxTest()
             redraw = true
         elseif backButton:contains(b, c) then
             running = false
