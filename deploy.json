@@ -1,11 +1,11 @@
 {
   "schema": 2,
   "version": "0.22.0-alpha.3",
-  "sourceCommit": "3056b5e668bc52311ab513046a0ae22e9babced8",
+  "sourceCommit": "a6477755d1fdd1b30bb18e49c9f8b7579255a2a3",
   "hashAlgorithm": "git-blob-sha1",
   "files": [
     {"source":"deploy.json","target":"deploy.json","control":"manifest"},
-    {"source":"packages.json","target":"packages.json","size":5523,"hash":"90c0139b24d5328236d6f055e374db105d8fefaf"},
+    {"source":"packages.json","target":"packages.json","size":7062,"hash":"61cc1572348d84cd5a403f9dfbe4209e8784bf55"},
     {"source":"src/startup.lua","target":"startup.lua","size":1054,"hash":"7e6758a09ddcd4ea2954785cc0b8a4ad3c71d8f9","bootstrapProtected":true},
     {"source":"src/main.lua","target":"main.lua","size":12097,"hash":"dee4cb0fb98f64e44511f7c6a3f7503586749c99"},
     {"source":"src/update.lua","target":"update.lua","size":2571,"hash":"7c4312052b866deab5bec02d18923e11283e32de","bootstrapProtected":true},
