@@ -2,6 +2,9 @@ local ui = require("lib.ui")
 local Screen = require("lib.gui.screen")
 local Automation = require("lib.automation")
 local Address = require("lib.net.address")
+local StorageManager = require("lib.system.storage_manager")
+local StorageInspector = require("lib.system.storage_inspector")
+local ServiceControl = require("lib.system.service_control")
 
 local StatusUI = {}
 
@@ -52,15 +55,9 @@ local function safeFreeSpace(path)
     return tonumber(value)
 end
 
-local function safeCapacity(path)
-    if type(fs.getCapacity) ~= "function" then return nil end
-    local ok, value = pcall(fs.getCapacity, path)
-    if not ok then return nil end
-    return tonumber(value)
-end
-
 local function truncate(text, width)
     text = tostring(text or "")
+    if width <= 0 then return "" end
     if #text <= width then return text end
     if width <= 3 then return text:sub(1, width) end
     return text:sub(1, width - 3) .. "..."
@@ -69,7 +66,9 @@ end
 local function waitForBack()
     while true do
         local event, key = os.pullEvent()
-        if event == "key" and (key == keys.left or key == keys.leftShift) then
+        if event == "key"
+            and (key == keys.left or key == keys.leftShift or key == keys.escape)
+        then
             return
         end
     end
@@ -84,6 +83,44 @@ local function drawLine(y, label, value, color)
     term.setTextColor(color or colors.white)
     term.setCursorPos(18, y)
     term.write(truncate(value, math.max(1, width - 19)))
+end
+
+local function promptLine(label, initial)
+    local width, height = term.getSize()
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(colors.yellow)
+    term.setCursorPos(1, height - 1)
+    term.write(string.rep(" ", width))
+    term.setCursorPos(2, height - 1)
+    term.write(truncate(label, math.max(1, width - 3)))
+    term.setTextColor(colors.white)
+    term.setCursorBlink(true)
+    local value = read(nil, nil, nil, initial)
+    term.setCursorBlink(false)
+    return value
+end
+
+local function confirmAction(text)
+    local width, height = term.getSize()
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(colors.orange)
+    term.setCursorPos(1, height - 1)
+    term.write(string.rep(" ", width))
+    term.setCursorPos(2, height - 1)
+    term.write(truncate(text .. "  Y=confirm / N=cancel", width - 2))
+
+    while true do
+        local event, value = os.pullEvent()
+        if event == "char" then
+            value = string.lower(value)
+            if value == "y" then return true end
+            if value == "n" then return false end
+        elseif event == "key"
+            and (value == keys.escape or value == keys.left or value == keys.leftShift)
+        then
+            return false
+        end
+    end
 end
 
 local function packageState(options)
@@ -130,64 +167,351 @@ local function showOverview(options)
 end
 
 local function showServices(options)
-    ui.drawHeader(options.title)
-    ui.centerText(term, 4, "STATUS / SERVICES", colors.cyan)
+    local supervisor = options.supervisor
+    local selected = 1
+    local message = "S=start  X=stop  R=restart"
 
-    local snapshot = options.supervisor and options.supervisor:snapshot() or {}
+    while true do
+        ui.drawHeader(options.title)
+        ui.centerText(term, 4, "STATUS / SERVICES", colors.cyan)
+
+        local snapshot = supervisor and supervisor:snapshot() or {}
+        if selected > #snapshot then selected = math.max(1, #snapshot) end
+        local width = term.getSize()
+
+        if #snapshot == 0 then
+            ui.centerText(term, 8, "No service data.", colors.orange)
+        else
+            for index, item in ipairs(snapshot) do
+                if index > 6 then break end
+                local y = 5 + index
+                local isSelected = index == selected
+                term.setBackgroundColor(isSelected and colors.lightBlue or colors.black)
+                term.setTextColor(isSelected and colors.black or colors.white)
+                term.setCursorPos(2, y)
+                term.write(string.rep(" ", math.max(1, width - 2)))
+                term.setCursorPos(3, y)
+                term.write(truncate(item.label or item.id, 15))
+                term.setCursorPos(19, y)
+                term.setTextColor(isSelected and colors.black or (STATE_COLORS[item.state] or colors.lightGray))
+                local right = string.format("%-10s R:%d F:%d", tostring(item.state or "?"), tonumber(item.restarts) or 0, tonumber(item.failures) or 0)
+                term.write(truncate(right, math.max(1, width - 20)))
+            end
+
+            local item = snapshot[selected]
+            if item then
+                drawLine(13, "Desired", tostring(item.desired or "?"), colors.white)
+                drawLine(14, "Depends", #(item.dependencies or {}) > 0 and table.concat(item.dependencies, ",") or "none", colors.lightGray)
+                drawLine(15, "Detail", tostring(item.lastError ~= "" and item.lastError or item.detail or ""), item.lastError ~= "" and colors.red or colors.lightGray)
+            end
+        end
+
+        term.setBackgroundColor(colors.black)
+        term.setTextColor(colors.lightGray)
+        term.setCursorPos(2, 17)
+        term.write(truncate(message, math.max(1, width - 2)))
+        ui.drawFooter("UP/DOWN  S START  X STOP  R RESTART  LEFT")
+
+        local event, a, b, c = os.pullEvent()
+        if event == "key" then
+            if a == keys.left or a == keys.leftShift or a == keys.escape then
+                return
+            elseif a == keys.up and #snapshot > 0 then
+                selected = math.max(1, selected - 1)
+            elseif a == keys.down and #snapshot > 0 then
+                selected = math.min(#snapshot, selected + 1)
+            end
+        elseif event == "char" and #snapshot > 0 then
+            local action = string.lower(a)
+            local item = snapshot[selected]
+            if item then
+                if action == "s" then
+                    local ok, err = ServiceControl.start(supervisor, item.id)
+                    message = ok and ("Start requested: " .. item.id) or tostring(err)
+                elseif action == "x" then
+                    if confirmAction("Stop " .. item.id .. "?") then
+                        local ok, err = ServiceControl.stop(supervisor, item.id)
+                        message = ok and ("Stopped: " .. item.id) or tostring(err)
+                    else
+                        message = "Stop cancelled"
+                    end
+                elseif action == "r" then
+                    if confirmAction("Restart " .. item.id .. "?") then
+                        local ok, err = ServiceControl.restart(supervisor, item.id)
+                        message = ok and ("Restart requested: " .. item.id) or tostring(err)
+                    else
+                        message = "Restart cancelled"
+                    end
+                end
+            end
+        elseif event == "mouse_click" and a == 1 and b >= 3 and b <= width - 1 and c >= 6 and c <= 11 then
+            local index = c - 5
+            if snapshot[index] then selected = index end
+        end
+    end
+end
+
+local function showMounts(options, manager)
+    ui.drawHeader(options.title)
+    ui.centerText(term, 4, "STORAGE / MOUNTS", colors.cyan)
+
+    local mounts = manager:listMounts()
     local width = term.getSize()
     local y = 6
 
-    if #snapshot == 0 then
-        ui.centerText(term, 8, "No service data.", colors.orange)
-    else
-        for _, item in ipairs(snapshot) do
-            if y > 14 then break end
-            local left = truncate(item.label or item.id, 15)
-            local right = string.format("%-10s R:%d F:%d", tostring(item.state or "?"), tonumber(item.restarts) or 0, tonumber(item.failures) or 0)
-
-            term.setBackgroundColor(colors.black)
-            term.setTextColor(colors.white)
-            term.setCursorPos(3, y)
-            term.write(left)
-            term.setTextColor(STATE_COLORS[item.state] or colors.lightGray)
-            term.setCursorPos(19, y)
-            term.write(truncate(right, math.max(1, width - 20)))
-            y = y + 1
-        end
+    for _, mount in ipairs(mounts) do
+        if y > 15 then break end
+        term.setCursorPos(2, y)
+        term.setTextColor(mount.readOnly and colors.orange or colors.white)
+        local line = string.format(
+            "%s [%s] free %s / %s",
+            mount.path,
+            tostring(mount.drive or "?"),
+            formatBytes(mount.free),
+            formatBytes(mount.capacity)
+        )
+        term.write(truncate(line, width - 2))
+        y = y + 1
     end
 
-    local summary = serviceSummary(options)
-    term.setTextColor(summary.failed > 0 and colors.red or colors.lightGray)
-    term.setCursorPos(3, 15)
-    term.write(truncate(string.format("Total %d  Running %d  Failed %d", summary.total, summary.running, summary.failed), math.max(1, width - 4)))
+    if #mounts == 0 then
+        ui.centerText(term, 8, "No mounts detected.", colors.orange)
+    end
 
     ui.drawFooter("LEFT / SHIFT - Back")
     waitForBack()
 end
 
-local function showStorage(options)
+local function showPackages(options)
     ui.drawHeader(options.title)
-    ui.centerText(term, 4, "STATUS / STORAGE & PACKAGES", colors.cyan)
-
-    local capacity = safeCapacity("/")
-    local free = safeFreeSpace("/")
-    local used = nil
-    if capacity and free and free ~= math.huge then
-        used = math.max(0, capacity - free)
-    end
+    ui.centerText(term, 4, "STORAGE / PACKAGES", colors.cyan)
 
     local installed = options.packages and options.packages:listInstalled() or {}
-    local pkgText, pkgColor = packageState(options)
+    local width = term.getSize()
+    local y = 6
 
-    drawLine(6, "Drive", "hdd /", colors.white)
-    drawLine(7, "Capacity", formatBytes(capacity), colors.white)
-    drawLine(8, "Used", formatBytes(used), colors.white)
-    drawLine(9, "Free", formatBytes(free), free and free ~= math.huge and free < 65536 and colors.orange or colors.lime)
-    drawLine(11, "Packages", tostring(type(installed) == "table" and #installed or 0) .. " installed", colors.white)
-    drawLine(12, "Pkg state", pkgText, pkgColor)
+    if type(installed) ~= "table" or #installed == 0 then
+        ui.centerText(term, 8, "No installed package records.", colors.orange)
+    else
+        for _, item in ipairs(installed) do
+            if y > 15 then break end
+            term.setCursorPos(2, y)
+            term.setTextColor(colors.white)
+            local line = string.format(
+                "%s  %s  [%s]",
+                tostring(item.id or "?"),
+                tostring(item.version or "?"),
+                tostring(item.mount or item.managedBy or "?")
+            )
+            term.write(truncate(line, width - 2))
+            y = y + 1
+        end
+    end
 
     ui.drawFooter("LEFT / SHIFT - Back")
     waitForBack()
+end
+
+local function showOwnership(options, manager)
+    local entries, truncated = StorageInspector.ownership(manager, "/", 200)
+    local offset = 1
+
+    while true do
+        ui.drawHeader(options.title)
+        ui.centerText(term, 4, "STORAGE / OWNERSHIP", colors.cyan)
+        local width = term.getSize()
+        local visible = 10
+
+        for row = 1, visible do
+            local item = entries[offset + row - 1]
+            if not item then break end
+            term.setCursorPos(2, 5 + row)
+            term.setTextColor(colors.white)
+            term.write(truncate(item.path .. "  <" .. tostring(item.owner) .. ">", width - 2))
+        end
+
+        term.setCursorPos(2, 17)
+        term.setTextColor(colors.lightGray)
+        term.write(truncate(string.format("%d managed targets%s", #entries, truncated and "+" or ""), width - 2))
+        ui.drawFooter("UP/DOWN/PgUp/PgDn  LEFT - Back")
+
+        local _, key = os.pullEvent("key")
+        if key == keys.left or key == keys.leftShift or key == keys.escape then
+            return
+        elseif key == keys.up then
+            offset = math.max(1, offset - 1)
+        elseif key == keys.down then
+            offset = math.min(math.max(1, #entries - visible + 1), offset + 1)
+        elseif key == keys.pageUp then
+            offset = math.max(1, offset - visible)
+        elseif key == keys.pageDown then
+            offset = math.min(math.max(1, #entries - visible + 1), offset + visible)
+        end
+    end
+end
+
+local function showSearchResults(options, results, meta)
+    local offset = 1
+    local visible = 10
+
+    while true do
+        ui.drawHeader(options.title)
+        ui.centerText(term, 4, "STORAGE / SEARCH", colors.cyan)
+        local width = term.getSize()
+
+        if #results == 0 then
+            ui.centerText(term, 8, "No matches.", colors.orange)
+        else
+            for row = 1, visible do
+                local item = results[offset + row - 1]
+                if not item then break end
+                term.setCursorPos(2, 5 + row)
+                term.setTextColor(item.isDir and colors.cyan or colors.white)
+                local marker = item.protected and "*" or " "
+                term.write(truncate(marker .. " " .. item.path, width - 2))
+            end
+        end
+
+        term.setCursorPos(2, 17)
+        term.setTextColor(colors.lightGray)
+        local suffix = meta and meta.truncated and " (limit reached)" or ""
+        term.write(truncate(tostring(#results) .. " matches" .. suffix, width - 2))
+        ui.drawFooter("UP/DOWN/PgUp/PgDn  LEFT - Back")
+
+        local _, key = os.pullEvent("key")
+        if key == keys.left or key == keys.leftShift or key == keys.escape then
+            return
+        elseif key == keys.up then
+            offset = math.max(1, offset - 1)
+        elseif key == keys.down then
+            offset = math.min(math.max(1, #results - visible + 1), offset + 1)
+        elseif key == keys.pageUp then
+            offset = math.max(1, offset - visible)
+        elseif key == keys.pageDown then
+            offset = math.min(math.max(1, #results - visible + 1), offset + visible)
+        end
+    end
+end
+
+local function showSearch(options, manager)
+    ui.drawHeader(options.title)
+    ui.centerText(term, 4, "STORAGE / SEARCH", colors.cyan)
+    drawLine(7, "Root", "Enter search root (default /)", colors.lightGray)
+    local root = promptLine("Root: ", "/")
+    if not root or root == "" then root = "/" end
+    local query = promptLine("Name contains: ")
+    if not query or query == "" then return end
+
+    local results, err, meta = StorageInspector.search(manager, root, query, {
+        limit = 100,
+        maxDepth = 16
+    })
+
+    if not results then
+        ui.drawHeader(options.title)
+        ui.centerText(term, 4, "STORAGE / SEARCH ERROR", colors.red)
+        ui.centerText(term, 8, truncate(tostring(err), select(1, term.getSize()) - 4), colors.orange)
+        ui.drawFooter("LEFT / SHIFT - Back")
+        waitForBack()
+        return
+    end
+
+    showSearchResults(options, results, meta)
+end
+
+local function showCleanup(options)
+    ui.drawHeader(options.title)
+    ui.centerText(term, 4, "STORAGE / CLEANUP", colors.cyan)
+
+    local report = StorageInspector.cleanupReport()
+    drawLine(6, "Transactions", report.activeTransaction and "ACTIVE" or "none", report.activeTransaction and colors.orange or colors.lime)
+    drawLine(7, "Stale files", tostring(#report.candidates), #report.candidates > 0 and colors.orange or colors.lime)
+
+    local y = 9
+    for _, item in ipairs(report.candidates) do
+        if y > 13 then break end
+        drawLine(y, item.kind, item.path, colors.lightGray)
+        y = y + 1
+    end
+
+    if report.safeToRunUpdaterCleanup then
+        drawLine(15, "Action", "run: update --cleanup", colors.cyan)
+    else
+        drawLine(15, "Action", "finish recovery first", colors.orange)
+    end
+
+    ui.drawFooter("LEFT / SHIFT - Back")
+    waitForBack()
+end
+
+local function createStorageHub()
+    local width = term.getSize()
+    local gap = 2
+    local margin = 2
+    local columnWidth = math.max(15, math.floor((width - margin * 2 - gap) / 2))
+    local leftX = margin
+    local rightX = leftX + columnWidth + gap
+    local screen = Screen.new(term, {columns = 2})
+
+    local function add(id, label, column, y, background, foreground)
+        screen:addButton({
+            id = id,
+            label = label,
+            x = column == 1 and leftX or rightX,
+            y = y,
+            width = columnWidth,
+            height = 2,
+            backgroundColor = background,
+            textColor = foreground or colors.white,
+            selectedBackgroundColor = colors.lightBlue,
+            selectedTextColor = colors.black
+        })
+    end
+
+    add("mounts", "Mounts", 1, 5, colors.brown)
+    add("packages", "Packages", 2, 5, colors.purple)
+    add("ownership", "Ownership", 1, 8, colors.gray)
+    add("search", "Search", 2, 8, colors.cyan, colors.black)
+    add("cleanup", "Cleanup", 1, 11, colors.orange, colors.black)
+    add("back", "Back", 2, 11, colors.gray)
+
+    return screen
+end
+
+local function showStorage(options)
+    local manager = options.storageManager or StorageManager.new()
+    local screen = createStorageHub()
+
+    while true do
+        ui.drawHeader(options.title)
+        ui.centerText(term, 4, "STATUS / STORAGE & PACKAGES", colors.cyan)
+        screen:draw()
+
+        local mounts = manager:listMounts()
+        local installed = options.packages and options.packages:listInstalled() or {}
+        local free = safeFreeSpace("/")
+        local width = term.getSize()
+        term.setCursorPos(2, 15)
+        term.setTextColor(colors.lightGray)
+        term.write(truncate(string.format("Root free %s | mounts %d | packages %d", formatBytes(free), #mounts, type(installed) == "table" and #installed or 0), width - 2))
+        ui.drawFooter("MOUSE CLICK  ARROWS  ENTER  LEFT/SHIFT")
+
+        local event, a, b, c = os.pullEvent()
+        if event == "term_resize" then
+            screen = createStorageHub()
+        elseif event == "key" and (a == keys.left or a == keys.leftShift or a == keys.escape) then
+            return
+        else
+            local action = screen:handleEvent(event, a, b, c)
+            if action == "back" then return
+            elseif action == "mounts" then showMounts(options, manager); screen = createStorageHub()
+            elseif action == "packages" then showPackages(options); screen = createStorageHub()
+            elseif action == "ownership" then showOwnership(options, manager); screen = createStorageHub()
+            elseif action == "search" then showSearch(options, manager); screen = createStorageHub()
+            elseif action == "cleanup" then showCleanup(options); screen = createStorageHub()
+            end
+        end
+    end
 end
 
 local function modemCount()
@@ -237,7 +561,7 @@ local function showNetwork(options)
 end
 
 local function createHub()
-    local width, height = term.getSize()
+    local width = term.getSize()
     local gap = 2
     local margin = 2
     local columnWidth = math.max(15, math.floor((width - margin * 2 - gap) / 2))
@@ -270,7 +594,7 @@ local function createHub()
         id = "back",
         label = "Back",
         x = math.max(2, math.floor((width - backWidth) / 2) + 1),
-        y = math.min(13, math.max(12, height - 5)),
+        y = 13,
         width = backWidth,
         height = 2,
         backgroundColor = colors.gray,
@@ -300,10 +624,10 @@ function StatusUI.show(options)
 
         if event == "term_resize" then
             screen = createHub()
-        elseif event == "key" and (a == keys.left or a == keys.leftShift) then
+        elseif event == "key" and (a == keys.left or a == keys.leftShift or a == keys.escape) then
             return
         else
-            local action, changed = screen:handleEvent(event, a, b, c)
+            local action = screen:handleEvent(event, a, b, c)
 
             if action == "back" then
                 return
@@ -319,8 +643,6 @@ function StatusUI.show(options)
             elseif action == "network" then
                 showNetwork(options)
                 screen = createHub()
-            elseif changed then
-                drawHub(options, screen)
             end
         end
     end
