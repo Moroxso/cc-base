@@ -1,14 +1,14 @@
 {
   "schema": 2,
-  "version": "0.21.0-alpha.5",
-  "sourceCommit": "7f263e0a998afa64a039de6806afa611da8885f4",
+  "version": "0.21.0-alpha.5.1",
+  "sourceCommit": "a6180f016cba41ec94a90a1ce8b0a1dfdfc0ce06",
   "hashAlgorithm": "git-blob-sha1",
   "files": [
     {"source":"deploy.json","target":"deploy.json","control":"manifest"},
-    {"source":"packages.json","target":"packages.json","size":7061,"hash":"712b03bd1be917a406a14dcb920dce0b69221361"},
+    {"source":"packages.json","target":"packages.json","size":7067,"hash":"9cbea7de7ac119c9fa79cb4c350ff8ea20cf3e4f"},
     {"source":"src/startup.lua","target":"startup.lua","size":1054,"hash":"7e6758a09ddcd4ea2954785cc0b8a4ad3c71d8f9","bootstrapProtected":true},
     {"source":"src/main.lua","target":"main.lua","size":13469,"hash":"bf0b69ffa983686ac31cbc2b01aeb11123720a4e"},
-    {"source":"src/update.lua","target":"update.lua","size":2312,"hash":"d34d30d4a278a8cd12f5cf020cd55deb9924f81e","bootstrapProtected":true},
+    {"source":"src/update.lua","target":"update.lua","size":2571,"hash":"7c4312052b866deab5bec02d18923e11283e32de","bootstrapProtected":true},
     {"source":"src/pkg.lua","target":"pkg.lua","size":13034,"hash":"0e50c33ccca9225ff28ae1abe36e79ef50b201de"},
     {"source":"src/lib/ui.lua","target":"lib/ui.lua","size":1745,"hash":"5332a0dbdfc287e64ddc52b0a4322c1a7660dad3"},
     {"source":"src/lib/runtime.lua","target":"lib/runtime.lua","size":3232,"hash":"af8c49a065c4d7d1aa526abc6e67e7403eedc4e4"},
