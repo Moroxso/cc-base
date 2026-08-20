@@ -5,36 +5,27 @@ local MonitorRenderer = {}
 
 local files = {"a", "b", "c", "d", "e", "f", "g", "h"}
 
--- Do not scale terminal sprites by repeating characters. On large monitors
--- that turns one ASCII stroke into 2-4 identical strokes and visually
--- duplicates the piece. Instead choose a hand-drawn glyph for the cell size.
-local compactSprites = {
-    pawn = {" o ", " ^ "},
-    knight = {"/> ", "/_ "},
-    bishop = {"/\\ ", "<> "},
-    rook = {"[#]", "|_|"},
-    queen = {"*^*", "\\_/"},
-    king = {" + ", "/_\\"}
-}
-
+-- Large monitor pieces use dedicated glyphs. We intentionally do not enlarge
+-- the 4x2 terminal sprite by repeating characters: that makes every line and
+-- curve appear two or three times on 4x2/5x4 displays.
 local mediumSprites = {
     pawn = {
         "  (o)  ",
         "   |   ",
-        "  /|\\  ",
-        " /___\\ "
+        "  -|-  ",
+        "  ===  "
     },
     knight = {
         "  /^>  ",
-        " /  )_ ",
-        "|    / ",
-        " \\__/  "
+        " /  )  ",
+        "|  /   ",
+        "|_/    "
     },
     bishop = {
-        "  /\\   ",
-        " <  >  ",
-        "  ||   ",
-        " _||_  "
+        "   ^   ",
+        "  <O>  ",
+        "   |   ",
+        "  ===  "
     },
     rook = {
         "_|_|_|_",
@@ -44,42 +35,42 @@ local mediumSprites = {
     },
     queen = {
         "* ^ ^ *",
-        " \\___/ ",
+        "  VVV  ",
         "  | |  ",
         " _|_|_ "
     },
     king = {
         "   +   ",
-        "  /|\\  ",
-        "  \\|/  ",
-        " _/ \\_ "
+        "  +++  ",
+        "   |   ",
+        "  ===  "
     }
 }
 
 local largeSprites = {
     pawn = {
         "   (o)   ",
-        "  /   \\  ",
-        "  \\___/  ",
+        "  (   )  ",
+        "   ---   ",
         "    |    ",
-        "   /|\\   ",
-        "  /___\\  "
+        "   -|-   ",
+        "  =====  "
     },
     knight = {
         "   /^>   ",
-        "  /  )__ ",
-        " /      |",
-        "|     __/",
-        " \\___/   ",
-        "  /___\\  "
+        "  /  )   ",
+        " /   )__ ",
+        "|       )",
+        "|    ___/",
+        "|___/    "
     },
     bishop = {
-        "    /\\   ",
-        "   /  \\  ",
-        "  < () > ",
-        "    ||   ",
-        "   /  \\  ",
-        " _/___\\_ "
+        "    ^    ",
+        "   /O/   ",
+        "  < O >  ",
+        "    |    ",
+        "   /|/   ",
+        "  =====  "
     },
     rook = {
         " _|_|_|_ ",
@@ -91,19 +82,19 @@ local largeSprites = {
     },
     queen = {
         "*  ^ ^  *",
-        " \\     / ",
-        "  \\___/  ",
+        "  V V V  ",
+        "   VVV   ",
+        "    |    ",
         "   | |   ",
-        "  /   \\  ",
-        "_/_____\\_"
+        "  =====  "
     },
     king = {
         "    +    ",
         "   +++   ",
-        "   /|\\   ",
-        "   \\|/   ",
-        "  /   \\  ",
-        "_/_____\\_"
+        "    +    ",
+        "    |    ",
+        "   /|/   ",
+        "  =====  "
     }
 }
 
@@ -208,10 +199,6 @@ local function chooseSprite(piece, cellWidth, cellHeight)
 
     if cellWidth >= 4 and cellHeight >= 2 then
         return Pieces.sprite(piece)
-    end
-
-    if cellWidth >= 3 and cellHeight >= 2 and compactSprites[kind] then
-        return compactSprites[kind]
     end
 
     return nil
