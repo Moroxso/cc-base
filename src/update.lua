@@ -327,7 +327,12 @@ local function runUpdate()
     end
 
     print("")
-    print("Changed files: " .. tostring(#staged)) .. "/" .. tostring(#manifest.files))
+    print(
+        "Changed files: "
+        .. tostring(#staged)
+        .. "/"
+        .. tostring(#manifest.files)
+    )
     print("Stage size: " .. formatBytes(stagedBytes))
     print("Unchanged: " .. tostring(unchanged))
     print("")
