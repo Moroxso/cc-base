@@ -5,13 +5,123 @@ local MonitorRenderer = {}
 
 local files = {"a", "b", "c", "d", "e", "f", "g", "h"}
 
+-- Spectator displays use several hand-drawn sprite tiers. We never enlarge
+-- a smaller glyph by repeating characters: every tier is drawn explicitly.
 local compactSprites = {
-    pawn = {" o ", " ^ "},
-    knight = {"/> ", "/_ "},
-    bishop = {"/\\ ", "<> "},
-    rook = {"[#]", "|_|"},
-    queen = {"*^*", "\\_/"},
-    king = {" + ", "/_\\"}
+    pawn = {
+        [[ o ]],
+        [[ ^ ]]
+    },
+    knight = {
+        [[/> ]],
+        [[/_ ]]
+    },
+    bishop = {
+        [[/\ ]],
+        [[<> ]]
+    },
+    rook = {
+        [[[#]]],
+        [[|_|]]
+    },
+    queen = {
+        [[*^*]],
+        [[\_/]]
+    },
+    king = {
+        [[ + ]],
+        [[/_\]]
+    }
+}
+
+local mediumSprites = {
+    pawn = {
+        [[  ooo  ]],
+        [[   |   ]],
+        [[  / \  ]],
+        [[ _===_ ]]
+    },
+    knight = {
+        [[  /^>  ]],
+        [[ /  )  ]],
+        [[|  /   ]],
+        [[|_/___ ]]
+    },
+    bishop = {
+        [[   /\  ]],
+        [[  <()> ]],
+        [[   ||  ]],
+        [[ _====_]]
+    },
+    rook = {
+        [[ _|_|_ ]],
+        [[ |___| ]],
+        [[  | |  ]],
+        [[ _|_|_ ]]
+    },
+    queen = {
+        [[ *^*^* ]],
+        [[  \_/  ]],
+        [[  | |  ]],
+        [[ _===_ ]]
+    },
+    king = {
+        [[   +   ]],
+        [[  +++  ]],
+        [[   |   ]],
+        [[ _===_ ]]
+    }
+}
+
+local largeSprites = {
+    pawn = {
+        [[   ooo   ]],
+        [[  (   )  ]],
+        [[   ---   ]],
+        [[    |    ]],
+        [[   / \   ]],
+        [[ _=====_ ]]
+    },
+    knight = {
+        [[   /^>   ]],
+        [[  /  )_  ]],
+        [[ /     \ ]],
+        [[|    __/ ]],
+        [[ \___/   ]],
+        [[ _/___\_ ]]
+    },
+    bishop = {
+        [[    /\   ]],
+        [[   /  \  ]],
+        [[  < () > ]],
+        [[    ||   ]],
+        [[   /  \  ]],
+        [[ _/____\_]]
+    },
+    rook = {
+        [[ _|_|_|_ ]],
+        [[ |_____| ]],
+        [[  |   |  ]],
+        [[  |   |  ]],
+        [[ _|   |_ ]],
+        [[|_______|]]
+    },
+    queen = {
+        [[ *  ^  * ]],
+        [[  \ | /  ]],
+        [[   \_/   ]],
+        [[   | |   ]],
+        [[  /   \  ]],
+        [[_/_____\_]]
+    },
+    king = {
+        [[    +    ]],
+        [[   +++   ]],
+        [[    |    ]],
+        [[   /|\   ]],
+        [[  /   \  ]],
+        [[_/_____\_]]
+    }
 }
 
 local function clamp(value, minimum, maximum)
@@ -79,43 +189,57 @@ local function squareBackground(game, x, y)
     return background
 end
 
+local function rowsWidth(rows)
+    local result = 0
+
+    for _, text in ipairs(rows or {}) do
+        result = math.max(result, #text)
+    end
+
+    return result
+end
+
 local function drawRows(target, rows, x, y, cellWidth, cellHeight, foreground, background)
-    local spriteWidth = #rows[1]
+    local spriteWidth = rowsWidth(rows)
     local spriteHeight = #rows
     local px = x + math.max(0, math.floor((cellWidth - spriteWidth) / 2))
     local py = y + math.max(0, math.floor((cellHeight - spriteHeight) / 2))
 
     for row, text in ipairs(rows) do
-        if row <= cellHeight then
-            write(target, px, py + row - 1, text, foreground, background, cellWidth)
+        if row <= cellHeight and py + row - 1 <= y + cellHeight - 1 then
+            write(target, px, py + row - 1, text, foreground, background)
         end
     end
 end
 
+local function chooseSprite(piece, cellWidth, cellHeight)
+    local kind = piece.kind
+
+    if cellWidth >= 9 and cellHeight >= 6 and largeSprites[kind] then
+        return largeSprites[kind], "large"
+    end
+
+    if cellWidth >= 7 and cellHeight >= 4 and mediumSprites[kind] then
+        return mediumSprites[kind], "medium"
+    end
+
+    if cellWidth >= 4 and cellHeight >= 2 then
+        return Pieces.sprite(piece), "standard"
+    end
+
+    if cellWidth >= 3 and cellHeight >= 2 and compactSprites[kind] then
+        return compactSprites[kind], "compact"
+    end
+
+    return nil, "symbol"
+end
+
 local function drawPiece(target, piece, x, y, cellWidth, cellHeight, background)
     local foreground = piece.color == Pieces.WHITE and colors.white or colors.black
+    local sprite = chooseSprite(piece, cellWidth, cellHeight)
 
-    if cellWidth >= 3 and cellHeight >= 2 and cellWidth < 4 then
-        local compact = compactSprites[piece.kind]
-
-        if compact then
-            drawRows(target, compact, x, y, cellWidth, cellHeight, foreground, background)
-            return
-        end
-    end
-
-    local sprite = Pieces.sprite(piece)
-
-    -- Keep one logical ASCII glyph per character on every monitor size.
-    -- The previous renderer enlarged pieces by repeating each character and
-    -- each row, which is why 5x4 monitors showed doubled/tripled figures.
-    if cellWidth >= 4 and cellHeight >= 2 then
+    if sprite then
         drawRows(target, sprite, x, y, cellWidth, cellHeight, foreground, background)
-        return
-    end
-
-    if cellWidth >= 3 and cellHeight >= 2 and compactSprites[piece.kind] then
-        drawRows(target, compactSprites[piece.kind], x, y, cellWidth, cellHeight, foreground, background)
         return
     end
 
@@ -123,6 +247,20 @@ local function drawPiece(target, piece, x, y, cellWidth, cellHeight, background)
     local px = x + math.floor((cellWidth - 1) / 2)
     local py = y + math.floor((cellHeight - 1) / 2)
     write(target, px, py, symbol, foreground, background)
+end
+
+local function detailTier(cellWidth, cellHeight)
+    if cellWidth >= 9 and cellHeight >= 6 then
+        return "LARGE"
+    elseif cellWidth >= 7 and cellHeight >= 4 then
+        return "MEDIUM"
+    elseif cellWidth >= 4 and cellHeight >= 2 then
+        return "STANDARD"
+    elseif cellWidth >= 3 and cellHeight >= 2 then
+        return "COMPACT"
+    end
+
+    return "SYMBOL"
 end
 
 local function statusText(game)
@@ -137,7 +275,7 @@ local function statusText(game)
     return "PLAY"
 end
 
-local function drawStatusPanel(target, x, y, width, game, options)
+local function drawStatusPanel(target, x, y, width, game, options, tier)
     local turn = tostring(game:getTurn() or "?"):upper()
     local last = Move.toText(game.lastMove)
 
@@ -156,6 +294,10 @@ local function drawStatusPanel(target, x, y, width, game, options)
         write(target, x, y + 9, "MOVE: #" .. tostring(options.moveNo or 0), colors.lightGray, colors.black, width)
     else
         write(target, x, y + 7, "MODE: LOCAL", colors.cyan, colors.black, width)
+    end
+
+    if tier then
+        write(target, x, y + 11, "DETAIL: " .. tier, colors.gray, colors.black, width)
     end
 end
 
@@ -187,6 +329,7 @@ function MonitorRenderer.draw(target, game, options)
     local boardX = math.max(2, math.floor((boardRegionWidth - boardWidth) / 2) + 1)
     local boardY = 3
     local title = tostring(options.title or "CHESS TOURNAMENT")
+    local tier = detailTier(cellWidth, cellHeight)
 
     fill(target, 1, 1, width, 1, colors.purple)
     centered(target, 1, title, colors.white, colors.purple)
@@ -213,7 +356,7 @@ function MonitorRenderer.draw(target, game, options)
     end
 
     if wide then
-        drawStatusPanel(target, boardRegionWidth + 2, 3, panelWidth, game, options)
+        drawStatusPanel(target, boardRegionWidth + 2, 3, panelWidth, game, options, tier)
     elseif reserveBottom > 0 then
         local statusY = math.min(height - reserveBottom + 1, boardY + boardHeight + 1)
         local last = Move.toText(game.lastMove)
@@ -222,6 +365,7 @@ function MonitorRenderer.draw(target, game, options)
         if options.mode == "NETWORK" then
             write(target, 2, statusY + 2, "NETWORK " .. tostring(options.networkState or "ONLINE"):upper() .. "   MOVE #" .. tostring(options.moveNo or 0), colors.lime, colors.black, width - 2)
         end
+        write(target, 2, statusY + 3, "DETAIL: " .. tier, colors.gray, colors.black, width - 2)
     end
 
     local footer = "TURN " .. tostring(game:getTurn()):upper() .. " | " .. statusText(game)
