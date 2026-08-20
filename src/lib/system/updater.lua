@@ -138,6 +138,26 @@ local function appendHistory(entry)
     return writeAtomicJson(HISTORY_FILE, history)
 end
 
+local function validJournal(value)
+    return type(value) == "table"
+        and value.schema == 1
+        and value.operation == "core-update"
+        and type(value.targetVersion) == "string"
+        and type(value.sourceCommit) == "string"
+        and type(value.manifestRaw) == "string"
+        and type(value.files) == "table"
+        and type(value.removeFiles) == "table"
+end
+
+local function findJournal()
+    local paths = {JOURNAL_FILE, JOURNAL_FILE .. ".bak", JOURNAL_FILE .. ".tmp"}
+    for _, path in ipairs(paths) do
+        local value = readJson(path)
+        if validJournal(value) then return value, path end
+    end
+    return nil, nil
+end
+
 local function journalProgress(journal)
     local done, total = 0, 0
     for _, item in ipairs(journal and journal.files or {}) do
@@ -217,7 +237,7 @@ end
 local function printStatus()
     local version = readAll(VERSION_FILE) or "unknown"
     local manifest = readJson(MANIFEST_FILE)
-    local journal = readJson(JOURNAL_FILE)
+    local journal, journalPath = findJournal()
     local history = loadHistory()
 
     print("CORE UPDATE STATUS")
@@ -235,6 +255,7 @@ local function printStatus()
         print("Transaction: " .. tostring(journal.transactionId or "unknown"))
         print("Recovery attempts: " .. tostring(journal.recoveryAttempts or 0))
         print("Diagnostic: " .. (journal.diagnostic == true and "yes" or "no"))
+        if journalPath ~= JOURNAL_FILE then print("Journal source: " .. tostring(journalPath)) end
     else
         print("Core transaction: none")
     end
@@ -270,7 +291,8 @@ local function printHistory()
 end
 
 local function cleanupArtifacts()
-    if fs.exists(JOURNAL_FILE) then return false, "core_transaction_pending_run_update_recover" end
+    local pending = findJournal()
+    if pending then return false, "core_transaction_pending_run_update_recover" end
     if fs.exists(PACKAGE_JOURNAL) then return false, "package_transaction_pending_run_pkg_recover" end
 
     local removed = 0
@@ -307,7 +329,7 @@ end
 
 local function diagnosticRecoveryTest()
     if fs.exists(PACKAGE_JOURNAL) then return false, "package_transaction_pending_run_pkg_recover" end
-    if fs.exists(JOURNAL_FILE) then return false, "core_transaction_already_pending" end
+    if findJournal() then return false, "core_transaction_already_pending" end
 
     local manifestRaw = readAll(MANIFEST_FILE)
     local manifest = manifestRaw and textutils.unserializeJSON(manifestRaw) or nil
@@ -374,7 +396,7 @@ end
 local function runCore(args, command)
     local beforeVersion = readAll(VERSION_FILE) or "unknown"
     local beforeManifest = readJson(MANIFEST_FILE)
-    local pending = readJson(JOURNAL_FILE)
+    local pending = findJournal()
 
     if pending then pending = incrementRecoveryAttempt(pending) end
 
