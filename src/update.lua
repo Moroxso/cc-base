@@ -15,6 +15,7 @@ local MANIFEST_URL = BASE_URL .. "deploy.json"
 local STAGE_DIR = "/.cc_update_stage"
 local VERSION_FILE = "/.project-version"
 local SECURITY_BASELINE = "/data/security/integrity.json"
+local SPACE_RESERVE = 4096
 
 local function download(url)
     local response, err = http.get(url)
@@ -39,14 +40,37 @@ end
 local function writeFile(path, content)
     ensureParent(path)
 
-    local file = fs.open(path, "w")
+    local file, openError = fs.open(path, "w")
 
     if not file then
-        error("Cannot write file: " .. path)
+        return false, "Cannot open for write: " .. path .. " (" .. tostring(openError) .. ")"
     end
 
-    file.write(content)
-    file.close()
+    local ok, writeError = pcall(function()
+        file.write(content)
+    end)
+
+    pcall(function()
+        file.close()
+    end)
+
+    if not ok then
+        if fs.exists(path) then
+            pcall(fs.delete, path)
+        end
+
+        return false, tostring(writeError)
+    end
+
+    return true
+end
+
+local function mustWriteFile(path, content)
+    local ok, err = writeFile(path, content)
+
+    if not ok then
+        error("Cannot write " .. path .. ": " .. tostring(err), 0)
+    end
 end
 
 local function readFile(path)
@@ -75,9 +99,17 @@ local function hashString(content)
     return string.format("%08x", hash)
 end
 
-local function clearStage()
+local function removeStage()
     if fs.exists(STAGE_DIR) then
-        fs.delete(STAGE_DIR)
+        pcall(fs.delete, STAGE_DIR)
+    end
+end
+
+local function clearStage()
+    removeStage()
+
+    if fs.exists(STAGE_DIR) then
+        error("Cannot clear update staging directory", 0)
     end
 
     fs.makeDir(STAGE_DIR)
@@ -97,6 +129,43 @@ local function validateTarget(path)
     end
 
     return true
+end
+
+local function freeSpace()
+    local ok, value = pcall(fs.getFreeSpace, "/")
+
+    if not ok or value == "unlimited" then
+        return math.huge
+    end
+
+    return tonumber(value) or math.huge
+end
+
+local function formatBytes(value)
+    value = math.max(0, math.floor(tonumber(value) or 0))
+
+    if value >= 1024 * 1024 then
+        return string.format("%.1f MiB", value / (1024 * 1024))
+    elseif value >= 1024 then
+        return string.format("%.1f KiB", value / 1024)
+    end
+
+    return tostring(value) .. " B"
+end
+
+local function installedMatches(target, content)
+    if not fs.exists(target) or fs.isDir(target) then
+        return false
+    end
+
+    local ok, size = pcall(fs.getSize, target)
+
+    if ok and tonumber(size) and tonumber(size) ~= #content then
+        return false
+    end
+
+    local installed = readFile(target)
+    return installed == content
 end
 
 local function refreshSecurityBaseline(manifest)
@@ -153,7 +222,12 @@ local function refreshSecurityBaseline(manifest)
     ensureParent(SECURITY_BASELINE)
 
     if fs.exists(temp) then fs.delete(temp) end
-    writeFile(temp, serialized)
+
+    local writeOk, writeError = writeFile(temp, serialized)
+
+    if not writeOk then
+        return false, "baseline_write_failed: " .. tostring(writeError)
+    end
 
     local verifyRaw = readFile(temp)
     local verify = verifyRaw and textutils.unserializeJSON(verifyRaw) or nil
@@ -171,77 +245,130 @@ local function refreshSecurityBaseline(manifest)
     return true
 end
 
-print("CC UPDATE")
-print("")
-print("Downloading manifest...")
+local function runUpdate()
+    print("CC UPDATE")
+    print("")
+    print("Downloading manifest...")
 
-local manifestData, manifestError = download(MANIFEST_URL)
+    local manifestData, manifestError = download(MANIFEST_URL)
 
-if not manifestData then
-    error("Manifest download failed: " .. tostring(manifestError))
-end
-
-local manifest = textutils.unserializeJSON(manifestData)
-
-if type(manifest) ~= "table" then
-    error("Invalid manifest")
-end
-
-if type(manifest.files) ~= "table" then
-    error("Manifest has no files")
-end
-
-print("Version: " .. tostring(manifest.version or "unknown"))
-print("")
-clearStage()
-
-for index, item in ipairs(manifest.files) do
-    if type(item.source) ~= "string" or not validateTarget(item.target) then
-        error("Invalid manifest entry #" .. index)
+    if not manifestData then
+        error("Manifest download failed: " .. tostring(manifestError), 0)
     end
 
-    print("[" .. index .. "/" .. #manifest.files .. "] " .. item.target)
+    local manifest = textutils.unserializeJSON(manifestData)
 
-    local content, err = download(BASE_URL .. item.source)
-
-    if not content then
-        fs.delete(STAGE_DIR)
-        error("Download failed: " .. item.source .. "\n" .. tostring(err))
+    if type(manifest) ~= "table" then
+        error("Invalid manifest", 0)
     end
 
-    local stagePath = fs.combine(STAGE_DIR, item.target)
-    writeFile(stagePath, content)
-end
-
-print("")
-print("Installing...")
-
-for _, item in ipairs(manifest.files) do
-    local source = fs.combine(STAGE_DIR, item.target)
-    local target = "/" .. item.target
-    ensureParent(target)
-
-    if fs.exists(target) then
-        fs.delete(target)
+    if type(manifest.files) ~= "table" then
+        error("Manifest has no files", 0)
     end
 
-    fs.move(source, target)
+    print("Version: " .. tostring(manifest.version or "unknown"))
+    print("Free space: " .. formatBytes(freeSpace()))
+    print("")
+
+    clearStage()
+
+    local staged = {}
+    local stagedBytes = 0
+    local unchanged = 0
+
+    for index, item in ipairs(manifest.files) do
+        if type(item.source) ~= "string" or not validateTarget(item.target) then
+            error("Invalid manifest entry #" .. index, 0)
+        end
+
+        local content, err = download(BASE_URL .. item.source)
+
+        if not content then
+            error("Download failed: " .. item.source .. "\n" .. tostring(err), 0)
+        end
+
+        local target = "/" .. item.target
+
+        if installedMatches(target, content) then
+            unchanged = unchanged + 1
+            print("[" .. index .. "/" .. #manifest.files .. "] " .. item.target .. " (unchanged)")
+        else
+            local available = freeSpace()
+            local required = #content + SPACE_RESERVE
+
+            if available ~= math.huge and available < required then
+                error(
+                    "Not enough disk space to stage " .. item.target ..
+                    ". Need about " .. formatBytes(required) ..
+                    ", free " .. formatBytes(available) ..
+                    ". Staging directory will be cleaned automatically.",
+                    0
+                )
+            end
+
+            print("[" .. index .. "/" .. #manifest.files .. "] " .. item.target .. " (update)")
+
+            local stagePath = fs.combine(STAGE_DIR, item.target)
+            local writeOk, writeError = writeFile(stagePath, content)
+
+            if not writeOk then
+                error(
+                    "Failed to stage " .. item.target .. ": " .. tostring(writeError),
+                    0
+                )
+            end
+
+            stagedBytes = stagedBytes + #content
+            table.insert(staged, {
+                target = item.target,
+                stagePath = stagePath
+            })
+        end
+    end
+
+    print("")
+    print("Changed files: " .. tostring(#staged)) .. "/" .. tostring(#manifest.files))
+    print("Stage size: " .. formatBytes(stagedBytes))
+    print("Unchanged: " .. tostring(unchanged))
+    print("")
+    print("Installing...")
+
+    for _, item in ipairs(staged) do
+        local target = "/" .. item.target
+        ensureParent(target)
+
+        if fs.exists(target) then
+            fs.delete(target)
+        end
+
+        fs.move(item.stagePath, target)
+    end
+
+    removeStage()
+    mustWriteFile(VERSION_FILE, tostring(manifest.version or "unknown"))
+
+    local baselineOk, baselineError = refreshSecurityBaseline(manifest)
+
+    print("")
+    print("Update complete.")
+    print("Installed version: " .. tostring(manifest.version or "unknown"))
+
+    if baselineOk then
+        print("Integrity baseline: refreshed")
+    else
+        print("Integrity baseline: WARNING " .. tostring(baselineError))
+    end
 end
 
-if fs.exists(STAGE_DIR) then
-    fs.delete(STAGE_DIR)
-end
+local ok, err = xpcall(runUpdate, function(message)
+    return tostring(message)
+end)
 
-writeFile(VERSION_FILE, tostring(manifest.version or "unknown"))
-
-local baselineOk, baselineError = refreshSecurityBaseline(manifest)
-
-print("")
-print("Update complete.")
-print("Installed version: " .. tostring(manifest.version or "unknown"))
-
-if baselineOk then
-    print("Integrity baseline: refreshed")
-else
-    print("Integrity baseline: WARNING " .. tostring(baselineError))
+if not ok then
+    removeStage()
+    print("")
+    print("UPDATE FAILED")
+    print(tostring(err))
+    print("Staging cleaned. Existing installation was not intentionally removed.")
+    error(err, 0)
 end
