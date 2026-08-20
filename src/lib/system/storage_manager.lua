@@ -139,18 +139,44 @@ function StorageManager:exactProtection(path)
     return nil
 end
 
-function StorageManager:destructiveProtection(path)
+function StorageManager:destructiveProtectionDetails(path)
     path = normalize(path)
-    local exact = self:exactProtection(path)
-    if exact then return exact end
+
+    local owner = self.owned[path]
+    if owner then
+        return {
+            owner = owner,
+            target = path,
+            kind = "exact"
+        }
+    end
+
+    for _, prefix in ipairs(SYSTEM_PREFIXES) do
+        if isInside(path, prefix) then
+            return {
+                owner = "system-data",
+                target = prefix,
+                kind = "prefix"
+            }
+        end
+    end
 
     for _, target in ipairs(self.protectedTargets) do
         if isInside(target, path) then
-            return self.owned[target] or "managed-content"
+            return {
+                owner = self.owned[target] or "managed-content",
+                target = target,
+                kind = "contains"
+            }
         end
     end
 
     return nil
+end
+
+function StorageManager:destructiveProtection(path)
+    local details = self:destructiveProtectionDetails(path)
+    return details and details.owner or nil
 end
 
 function StorageManager:list(path)
@@ -222,7 +248,8 @@ function StorageManager:inspect(path, includeTreeSize)
 
     local snapshot = Storage.snapshot(path)
     local exact = self:exactProtection(path)
-    local destructive = self:destructiveProtection(path)
+    local protectionDetails = self:destructiveProtectionDetails(path)
+    local destructive = protectionDetails and protectionDetails.owner or nil
 
     return {
         path = path,
@@ -237,7 +264,9 @@ function StorageManager:inspect(path, includeTreeSize)
         owner = self.owned[path],
         exactProtection = exact,
         protected = destructive ~= nil,
-        protection = destructive
+        protection = destructive,
+        protectionTarget = protectionDetails and protectionDetails.target or nil,
+        protectionKind = protectionDetails and protectionDetails.kind or nil
     }
 end
 
@@ -410,11 +439,41 @@ function StorageManager:delete(path)
     if not fs.exists(path) then return false, "path_not_found" end
 
     self:refreshOwnership()
-    local protection = self:destructiveProtection(path)
-    if protection then return false, "path_protected:" .. tostring(protection) end
 
-    local ok, err = pcall(fs.delete, path)
-    if not ok then return false, "delete_failed:" .. tostring(err) end
+    local protection = self:destructiveProtectionDetails(path)
+    if protection then
+        return false,
+            "path_protected:"
+            .. tostring(protection.owner)
+            .. ":"
+            .. tostring(protection.target)
+    end
+
+    local readOnly = Storage.isReadOnly(path)
+    if readOnly == true then
+        return false, "path_read_only:" .. path
+    end
+
+    local parent = normalize(fs.getDir(path))
+    local parentReadOnly = Storage.isReadOnly(parent)
+    if parentReadOnly == true then
+        return false, "parent_read_only:" .. parent
+    end
+
+    local called, result, detail = pcall(fs.delete, path)
+
+    if not called then
+        return false, "delete_failed:" .. tostring(result)
+    end
+
+    if result == false then
+        return false, "delete_failed:" .. tostring(detail or "false_return")
+    end
+
+    if fs.exists(path) then
+        return false, "delete_failed:path_still_exists:" .. path
+    end
+
     return true
 end
 
