@@ -2,6 +2,7 @@ local Journal = {}
 
 Journal.SCHEMA = 1
 Journal.DEFAULT_PATH = "/data/system/package-journal.json"
+Journal.CORE_UPDATE_JOURNAL = "/data/system/update-journal.json"
 
 local function nowMs()
     if os.epoch then
@@ -144,6 +145,10 @@ end
 
 function Journal.save(value, path)
     path = path or Journal.DEFAULT_PATH
+
+    if fs.exists(Journal.CORE_UPDATE_JOURNAL) then
+        return false, "core_update_pending"
+    end
 
     local valid, err = Journal.validate(value)
 
