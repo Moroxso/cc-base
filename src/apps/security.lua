@@ -230,10 +230,7 @@ local function runSandboxTest()
         }
     )
 
-    local reportPath = fs.combine(
-        Sandbox.storageRoot("security-probe"),
-        "report.json"
-    )
+    local reportPath = Sandbox.storageRoot("security-probe") .. "/report.json"
     local report = readJson(reportPath)
     local integrity = Integrity.scan()
 
