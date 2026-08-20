@@ -17,8 +17,23 @@ function Renderer.new(target)
     self.cellWidth = 4
     self.cellHeight = 2
     self.panelX = 36
+    self.flipped = false
+    self.title = "CHESS PVP"
+    self.networkInfo = nil
 
     return self
+end
+
+function Renderer:setFlipped(flipped)
+    self.flipped = flipped == true
+end
+
+function Renderer:setTitle(title)
+    self.title = tostring(title or "CHESS PVP")
+end
+
+function Renderer:setNetworkInfo(info)
+    self.networkInfo = type(info) == "table" and info or nil
 end
 
 function Renderer:resetColors()
@@ -41,7 +56,7 @@ end
 
 function Renderer:drawHeader()
     local width = self.target.getSize()
-    local text = "CHESS PVP"
+    local text = self.title
 
     self.target.setBackgroundColor(colors.purple)
     self.target.setTextColor(colors.white)
@@ -50,7 +65,7 @@ function Renderer:drawHeader()
 
     local x = math.max(1, math.floor((width - #text) / 2) + 1)
     self.target.setCursorPos(x, 1)
-    self.target.write(text)
+    self.target.write(text:sub(1, width))
     self:resetColors()
 end
 
@@ -101,31 +116,40 @@ function Renderer:drawPiece(screenX, screenY, piece, background)
     end
 end
 
+function Renderer:screenToBoard(screenColumn, screenRow)
+    local x = self.flipped and (9 - screenColumn) or screenColumn
+    local y = self.flipped and (9 - screenRow) or screenRow
+    return x, y
+end
+
 function Renderer:drawBoard(game)
-    for x = 1, 8 do
-        local screenX = self.boardX + (x - 1) * self.cellWidth
+    for screenColumn = 1, 8 do
+        local boardX = self.flipped and (9 - screenColumn) or screenColumn
+        local screenX = self.boardX + (screenColumn - 1) * self.cellWidth
         self:write(
             screenX + 1,
             2,
-            fileNames[x],
+            fileNames[boardX],
             colors.lightGray
         )
     end
 
-    for y = 1, 8 do
-        local screenY = self.boardY + (y - 1) * self.cellHeight
+    for screenRow = 1, 8 do
+        local boardY = self.flipped and (9 - screenRow) or screenRow
+        local screenY = self.boardY + (screenRow - 1) * self.cellHeight
 
         self:write(
             1,
             screenY,
-            tostring(9 - y),
+            tostring(9 - boardY),
             colors.lightGray
         )
 
-        for x = 1, 8 do
-            local screenX = self.boardX + (x - 1) * self.cellWidth
-            local background = self:getSquareBackground(game, x, y)
-            local piece = game.board:get(x, y)
+        for screenColumn = 1, 8 do
+            local boardX = self.flipped and (9 - screenColumn) or screenColumn
+            local screenX = self.boardX + (screenColumn - 1) * self.cellWidth
+            local background = self:getSquareBackground(game, boardX, boardY)
+            local piece = game.board:get(boardX, boardY)
 
             for row = 0, self.cellHeight - 1 do
                 self.target.setBackgroundColor(background)
@@ -136,7 +160,7 @@ function Renderer:drawBoard(game)
 
             if piece then
                 self:drawPiece(screenX, screenY, piece, background)
-            elseif game:isLegalDestination(x, y) then
+            elseif game:isLegalDestination(boardX, boardY) then
                 self.target.setBackgroundColor(background)
                 self.target.setTextColor(colors.black)
                 self.target.setCursorPos(screenX + 1, screenY)
@@ -186,10 +210,36 @@ function Renderer:drawPanel(game)
 
     self:write(x, 8, "Last: " .. last, colors.lightGray)
 
+    if self.networkInfo then
+        local info = self.networkInfo
+        self:write(
+            x,
+            9,
+            "YOU: " .. tostring(info.localColor or "?"):upper(),
+            colors.yellow
+        )
+        self:write(
+            x,
+            10,
+            "NET: " .. tostring(info.state or "?"):upper(),
+            info.connected == false and colors.red or colors.lime
+        )
+        self:write(
+            x,
+            11,
+            "MOVE: #" .. tostring(info.moveNo or 0),
+            colors.lightGray
+        )
+    end
+
     if game.status ~= "playing" then
-        self:write(x, 12, "ENTER = new game", colors.lightGray)
+        self:write(x, 12, "New Game button", colors.lightGray)
     elseif not game.promotionPending then
-        self:write(x, 12, "Click piece -> move", colors.lightGray)
+        if self.networkInfo and game:getTurn() ~= self.networkInfo.localColor then
+            self:write(x, 12, "Waiting opponent", colors.orange)
+        else
+            self:write(x, 12, "Click piece -> move", colors.lightGray)
+        end
     end
 end
 
@@ -207,10 +257,16 @@ end
 
 function Renderer:drawFooter()
     local width, height = self.target.getSize()
-    local footer = "MOUSE click  ARROWS cursor  ENTER select  CTRL restart  SHIFT back"
+    local footer
+
+    if self.networkInfo then
+        footer = "MOUSE click  ARROWS cursor  ENTER select  CTRL new game  SHIFT back"
+    else
+        footer = "MOUSE click  ARROWS cursor  ENTER select  CTRL restart  SHIFT back"
+    end
 
     if #footer > width then
-        footer = "MOUSE  ARROWS  ENTER  CTRL restart  SHIFT back"
+        footer = "MOUSE  ARROWS  ENTER  CTRL new  SHIFT back"
     end
 
     self.target.setBackgroundColor(colors.gray)
@@ -233,10 +289,10 @@ function Renderer:screenToSquare(x, y)
         return nil, nil
     end
 
-    local boardX = math.floor((x - self.boardX) / self.cellWidth) + 1
-    local boardY = math.floor((y - self.boardY) / self.cellHeight) + 1
+    local screenColumn = math.floor((x - self.boardX) / self.cellWidth) + 1
+    local screenRow = math.floor((y - self.boardY) / self.cellHeight) + 1
 
-    return boardX, boardY
+    return self:screenToBoard(screenColumn, screenRow)
 end
 
 function Renderer:draw(game, controls)
