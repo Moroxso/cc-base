@@ -27,6 +27,31 @@ local function installedSet()
     return result
 end
 
+local function printPending()
+    local pending, err = manager:pendingTransaction()
+
+    if err then
+        print("Transaction journal: ERROR " .. tostring(err))
+        return
+    end
+
+    if not pending then
+        print("Transaction journal: clean")
+        return
+    end
+
+    print(
+        "Transaction journal: "
+        .. pending.transaction.operation
+        .. " "
+        .. pending.transaction.packageId
+        .. " "
+        .. tostring(pending.done)
+        .. "/"
+        .. tostring(pending.total)
+    )
+end
+
 local function printStatus()
     local catalog, catalogError = manager:loadCatalog()
 
@@ -55,6 +80,7 @@ local function printStatus()
     print("Packages: " .. tostring(#catalog.packages))
     print("Registry: " .. (manager.registryExisted and "present" or "not created"))
     print("Installed entries: " .. tostring(#installed))
+    printPending()
     print("")
     print("Storage")
     print("Drive: " .. tostring(storage.drive or "unknown"))
@@ -81,16 +107,22 @@ local function printList()
     print("AVAILABLE PACKAGES")
 
     for _, packageItem in ipairs(available) do
-        local marker = installed[packageItem.id] and "[x]" or "[ ]"
+        local installedItem = installed[packageItem.id]
+        local marker = installedItem and "[x]" or "[ ]"
         local size = manager:packageFootprint(packageItem)
         local sizeText = size and Storage.formatBytes(size) or "meta"
+        local versionText = tostring(packageItem.version)
+
+        if installedItem and installedItem.version ~= packageItem.version then
+            versionText = tostring(installedItem.version) .. " -> " .. packageItem.version
+        end
 
         print(
             marker
             .. " "
             .. packageItem.id
             .. "  "
-            .. tostring(packageItem.version)
+            .. versionText
             .. "  "
             .. sizeText
         )
@@ -212,28 +244,58 @@ local function verify()
     return failed == 0
 end
 
-local function plan(id)
-    if not id or id == "" then
-        return fail("Usage: pkg plan <package-id>")
-    end
-
-    local result, err = manager:planInstall(id)
-
-    if not result then
-        return fail(err)
-    end
-
-    print("INSTALL PLAN")
+local function printPlan(result, title)
+    print(title)
     print("Package: " .. result.package.id .. " " .. result.package.version)
-    print("Already installed: " .. (result.alreadyInstalled and "yes" or "no"))
+    print("Already current: " .. (result.alreadyCurrent and "yes" or "no"))
     print("Reuse files: " .. tostring(result.reused))
-    print("Download files: " .. tostring(#result.download))
+    print("Transaction files: " .. tostring(#result.files))
+    print("Remove obsolete: " .. tostring(#result.removeFiles))
     print("Net growth: " .. Storage.formatBytes(result.finalDelta))
     print("Reserve: " .. Storage.formatBytes(result.storage.reserve))
     print("Required free: " .. Storage.formatBytes(result.storage.required))
     print("Current free: " .. Storage.formatBytes(result.storage.free))
     print("Safe: " .. (result.storage.safe and "yes" or "no"))
+end
+
+local function plan(id, updateMode)
+    if not id or id == "" then
+        return fail("Usage: pkg plan <package-id> [update]")
+    end
+
+    local result, err
+
+    if updateMode then
+        result, err = manager:planUpdate(id)
+    else
+        result, err = manager:planInstall(id)
+    end
+
+    if not result then
+        return fail(err)
+    end
+
+    printPlan(result, updateMode and "UPDATE PLAN" or "INSTALL PLAN")
     return true
+end
+
+local function showResult(result, verb)
+    if result.alreadyInstalled then
+        print("Already installed: " .. result.id .. " " .. result.version)
+    elseif result.alreadyCurrent then
+        print("Already current: " .. result.id .. " " .. result.version)
+    else
+        print(verb .. ": " .. result.id .. " " .. tostring(result.version or ""))
+        print("Downloaded files: " .. tostring(result.downloadedFiles or 0))
+        print("Reused files: " .. tostring(result.reusedFiles or 0))
+        print("Written: " .. Storage.formatBytes(result.bytesWritten or 0))
+    end
+
+    if result.integrityRefreshed == false then
+        print("Integrity baseline: WARNING " .. tostring(result.integrityError))
+    else
+        print("Integrity baseline: refreshed")
+    end
 end
 
 local function install(id)
@@ -249,21 +311,78 @@ local function install(id)
         return fail(err)
     end
 
-    if result.alreadyInstalled then
-        print("Already installed: " .. result.id .. " " .. result.version)
-    else
-        print("Installed: " .. result.id .. " " .. result.version)
-        print("Downloaded files: " .. tostring(result.downloadedFiles))
-        print("Reused files: " .. tostring(result.reusedFiles))
-        print("Written: " .. Storage.formatBytes(result.bytesWritten))
+    showResult(result, "Installed")
+    return true
+end
+
+local function updateOne(id)
+    if not id or id == "" then
+        return fail("Usage: pkg update <package-id>")
     end
 
-    if result.integrityRefreshed == false then
-        print("Integrity baseline: WARNING " .. tostring(result.integrityError))
-    else
-        print("Integrity baseline: refreshed")
+    print("Updating " .. id .. "...")
+
+    local result, err = manager:update(id)
+
+    if not result then
+        return fail(err)
     end
 
+    showResult(result, "Updated")
+    return true
+end
+
+local function updateAll()
+    local installed, installedError = manager:listInstalled()
+
+    if not installed then
+        return fail(installedError)
+    end
+
+    local attempted = 0
+
+    for _, installedItem in ipairs(installed) do
+        local packageItem = manager:getPackage(installedItem.id)
+
+        if packageItem and packageItem.managedBy == "package" then
+            attempted = attempted + 1
+            print("[" .. tostring(attempted) .. "] " .. packageItem.id)
+
+            local result, err = manager:update(packageItem.id)
+
+            if not result then
+                return fail(err)
+            end
+
+            if result.alreadyCurrent then
+                print("  current")
+            else
+                print("  updated to " .. result.version)
+            end
+        end
+    end
+
+    if attempted == 0 then
+        print("No package-managed installations.")
+    end
+
+    return true
+end
+
+local function repair(id)
+    if not id or id == "" then
+        return fail("Usage: pkg repair <package-id>")
+    end
+
+    print("Repairing " .. id .. "...")
+
+    local result, err = manager:repair(id)
+
+    if not result then
+        return fail(err)
+    end
+
+    showResult(result, "Repaired")
     return true
 end
 
@@ -282,7 +401,37 @@ local function remove(id)
 
     print("Removed: " .. result.id)
     print("Removed files: " .. tostring(result.removedFiles))
-    print("Freed: " .. Storage.formatBytes(result.freedBytes))
+    print("Freed this run: " .. Storage.formatBytes(result.freedBytes))
+
+    if result.integrityRefreshed == false then
+        print("Integrity baseline: WARNING " .. tostring(result.integrityError))
+    else
+        print("Integrity baseline: refreshed")
+    end
+
+    return true
+end
+
+local function recover()
+    print("Checking package transaction journal...")
+
+    local result, err = manager:recoverPending()
+
+    if not result then
+        return fail(err)
+    end
+
+    if not result.recovered then
+        print("No pending transaction.")
+        return true
+    end
+
+    print(
+        "Recovered: "
+        .. tostring(result.operation)
+        .. " "
+        .. tostring(result.id)
+    )
 
     if result.integrityRefreshed == false then
         print("Integrity baseline: WARNING " .. tostring(result.integrityError))
@@ -301,8 +450,12 @@ local function usage()
     print("  reconcile")
     print("  verify")
     print("  plan <package-id>")
+    print("  plan-update <package-id>")
     print("  install <package-id>")
+    print("  update [package-id]")
+    print("  repair <package-id>")
     print("  remove <package-id>")
+    print("  recover")
 end
 
 local ok
@@ -318,11 +471,23 @@ elseif command == "reconcile" then
 elseif command == "verify" then
     ok = verify()
 elseif command == "plan" then
-    ok = plan(args[2])
+    ok = plan(args[2], false)
+elseif command == "plan-update" then
+    ok = plan(args[2], true)
 elseif command == "install" then
     ok = install(args[2])
+elseif command == "update" then
+    if args[2] then
+        ok = updateOne(args[2])
+    else
+        ok = updateAll()
+    end
+elseif command == "repair" then
+    ok = repair(args[2])
 elseif command == "remove" then
     ok = remove(args[2])
+elseif command == "recover" then
+    ok = recover()
 elseif command == "help" or command == "--help" or command == "-h" then
     usage()
     ok = true
