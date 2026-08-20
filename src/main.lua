@@ -10,6 +10,7 @@ local IPService = require("lib.net.ip_service")
 local DatagramService = require("lib.net.datagram_service")
 local StreamService = require("lib.net.stream_service")
 local SecurityService = require("lib.security.service")
+local DefenseController = require("lib.defense.controller")
 
 local APP_TITLE = "BASE CONTROL SYSTEM"
 local AUTOMATION_PATH = "/data/automation.json"
@@ -21,6 +22,7 @@ local ip = IPService.new()
 local datagrams = DatagramService.new()
 local streams = StreamService.new()
 local security = SecurityService.new()
+local defense = DefenseController.new()
 local supervisor = ServiceSupervisor.new()
 
 local function registerService(spec)
@@ -74,6 +76,14 @@ registerService({
     label = "Security",
     instance = security,
     restartPolicy = "always"
+})
+
+registerService({
+    id = "defense",
+    label = "Defense Controller",
+    instance = defense,
+    restartPolicy = "always",
+    dependencies = {"network"}
 })
 
 local packageRecoveryError = nil
@@ -440,7 +450,7 @@ local function drawDashboard(screen)
     term.write(status)
 
     ui.resetColors(term)
-    ui.drawFooter("MOUSE CLICK  ARROWS  ENTER  SHIFT")
+    ui.drawFooter("MOUSE CLICK  ARROWS  ENTER  D DEFENSE  SHIFT")
 end
 
 local function activateDashboardAction(action)
@@ -484,6 +494,12 @@ local function mainLoop()
         local event, a, b, c = os.pullEvent()
 
         if event == "term_resize" then
+            screen = createDashboardScreen()
+        elseif event == "key" and a == keys.d then
+            runProgram(
+                "Defense Control",
+                "/apps/defense.lua"
+            )
             screen = createDashboardScreen()
         elseif event == "key" and a == keys.leftShift then
             ui.clear(term)
