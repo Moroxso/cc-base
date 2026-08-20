@@ -1,5 +1,7 @@
 local Game = require("chess.game")
 local Renderer = require("chess.renderer")
+local Displays = require("chess.displays")
+local DisplayMenu = require("chess.display_menu")
 local Button = require("lib.gui.button")
 
 local width, height = term.getSize()
@@ -14,6 +16,8 @@ end
 
 local game = Game.new()
 local renderer = Renderer.new(term)
+local displays = Displays.new()
+local displayMenu = DisplayMenu.new(term, displays)
 local running = true
 local promotionIndex = 1
 
@@ -25,6 +29,17 @@ local restartButton = Button.new({
     width = 15,
     height = 1,
     backgroundColor = colors.blue,
+    textColor = colors.white
+})
+
+local displayButton = Button.new({
+    id = "displays",
+    label = "Displays",
+    x = 36,
+    y = 15,
+    width = 15,
+    height = 1,
+    backgroundColor = colors.purple,
     textColor = colors.white
 })
 
@@ -99,9 +114,23 @@ local function syncPromotionSelection()
     end
 end
 
+local function renderMonitors()
+    displays:render(game, {
+        mode = "LOCAL",
+        title = "CHESS TOURNAMENT"
+    })
+end
+
 local function redraw()
-    syncPromotionSelection()
-    renderer:draw(game, controls)
+    if displayMenu:isOpen() then
+        displayMenu:draw()
+    else
+        syncPromotionSelection()
+        renderer:draw(game, controls)
+        displayButton:draw(term)
+    end
+
+    renderMonitors()
 end
 
 local function restartGame()
@@ -127,6 +156,11 @@ end
 local function handleMouse(button, x, y)
     if not isPointerClick(button) then
         return false
+    end
+
+    if displayButton:contains(x, y) then
+        displayMenu:open()
+        return true
     end
 
     if restartButton:contains(x, y) then
@@ -188,7 +222,11 @@ while running do
     local event, a, b, c = os.pullEvent()
     local redrawNeeded = false
 
-    if event == "mouse_click" then
+    if displayMenu:isOpen() then
+        local changed = displayMenu:handleEvent(event, a, b, c)
+        redrawNeeded = changed == true
+
+    elseif event == "mouse_click" then
         redrawNeeded = handleMouse(a, b, c)
 
     elseif event == "key" then
@@ -228,12 +266,17 @@ while running do
             redrawNeeded = true
         end
 
+    elseif event == "peripheral" or event == "peripheral_detach" then
+        displays:refresh()
+        redrawNeeded = true
+
     elseif event == "term_resize" then
         local newWidth, newHeight = term.getSize()
 
         if newWidth < 51 or newHeight < 19 then
             running = false
         else
+            width, height = newWidth, newHeight
             redrawNeeded = true
         end
     end
@@ -243,6 +286,7 @@ while running do
     end
 end
 
+displays:clearOutputs()
 term.setBackgroundColor(colors.black)
 term.setTextColor(colors.white)
 term.clear()
