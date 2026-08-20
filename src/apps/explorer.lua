@@ -232,16 +232,24 @@ local function confirm(text)
     term.setCursorPos(1, l.height - 2)
     term.write(string.rep(" ", l.width))
     term.setCursorPos(2, l.height - 2)
-    term.write(truncate(text .. " [y/N]", l.width - 2))
+    term.write(truncate(text .. "  Y=CONFIRM N=CANCEL", l.width - 2))
 
     while true do
         local event, value = os.pullEvent()
+
         if event == "char" then
-            value = string.lower(value)
+            value = string.lower(tostring(value or ""))
             if value == "y" then return true end
             if value == "n" then return false end
-        elseif event == "key" and (value == keys.enter or value == keys.escape or value == keys.left) then
-            return false
+        elseif event == "key" then
+            -- Some Polymania/keyboard-layout combinations do not emit an
+            -- ASCII `char` event for the physical Y/N keys. Accept the key
+            -- code as well as `char`, while keeping Enter as a safe cancel.
+            if value == keys.y then return true end
+            if value == keys.n then return false end
+            if value == keys.enter or value == keys.escape or value == keys.left then
+                return false
+            end
         end
     end
 end
