@@ -5,6 +5,15 @@ local MonitorRenderer = {}
 
 local files = {"a", "b", "c", "d", "e", "f", "g", "h"}
 
+local compactSprites = {
+    pawn = {" o ", " ^ "},
+    knight = {"/> ", "/_ "},
+    bishop = {"/\\ ", "<> "},
+    rook = {"[#]", "|_|"},
+    queen = {"*^*", "\\_/"},
+    king = {" + ", "/_\\"}
+}
+
 local function clamp(value, minimum, maximum)
     if value < minimum then return minimum end
     if value > maximum then return maximum end
@@ -89,21 +98,7 @@ local function scaleSprite(sprite, scale)
     return rows
 end
 
-local function drawPiece(target, piece, x, y, cellWidth, cellHeight, background)
-    local foreground = piece.color == Pieces.WHITE and colors.white or colors.black
-    local sprite = Pieces.sprite(piece)
-    local scale = math.floor(math.min(cellWidth / 4, cellHeight / 2))
-
-    if scale < 1 then
-        local symbol = Pieces.symbol(piece):upper()
-        local px = x + math.floor((cellWidth - 1) / 2)
-        local py = y + math.floor((cellHeight - 1) / 2)
-        write(target, px, py, symbol, foreground, background)
-        return
-    end
-
-    scale = clamp(scale, 1, 4)
-    local rows = scaleSprite(sprite, scale)
+local function drawRows(target, rows, x, y, cellWidth, cellHeight, foreground, background)
     local spriteWidth = #rows[1]
     local spriteHeight = #rows
     local px = x + math.max(0, math.floor((cellWidth - spriteWidth) / 2))
@@ -114,6 +109,38 @@ local function drawPiece(target, piece, x, y, cellWidth, cellHeight, background)
             write(target, px, py + row - 1, text, foreground, background, cellWidth)
         end
     end
+end
+
+local function drawPiece(target, piece, x, y, cellWidth, cellHeight, background)
+    local foreground = piece.color == Pieces.WHITE and colors.white or colors.black
+
+    if cellWidth >= 3 and cellHeight >= 2 and cellWidth < 4 then
+        local compact = compactSprites[piece.kind]
+
+        if compact then
+            drawRows(target, compact, x, y, cellWidth, cellHeight, foreground, background)
+            return
+        end
+    end
+
+    local sprite = Pieces.sprite(piece)
+    local scale = math.floor(math.min(cellWidth / 4, cellHeight / 2))
+
+    if scale < 1 then
+        if cellWidth >= 3 and cellHeight >= 2 and compactSprites[piece.kind] then
+            drawRows(target, compactSprites[piece.kind], x, y, cellWidth, cellHeight, foreground, background)
+            return
+        end
+
+        local symbol = Pieces.symbol(piece):upper()
+        local px = x + math.floor((cellWidth - 1) / 2)
+        local py = y + math.floor((cellHeight - 1) / 2)
+        write(target, px, py, symbol, foreground, background)
+        return
+    end
+
+    scale = clamp(scale, 1, 4)
+    drawRows(target, scaleSprite(sprite, scale), x, y, cellWidth, cellHeight, foreground, background)
 end
 
 local function statusText(game)
