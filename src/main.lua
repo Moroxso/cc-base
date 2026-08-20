@@ -2,6 +2,7 @@ local ui = require("lib.ui")
 local Runtime = require("lib.runtime")
 local Automation = require("lib.automation")
 local Screen = require("lib.gui.screen")
+local PackageManager = require("lib.package.manager")
 local NetworkService = require("lib.net.service")
 local IPService = require("lib.net.ip_service")
 local DatagramService = require("lib.net.datagram_service")
@@ -13,11 +14,28 @@ local APP_TITLE = "BASE CONTROL SYSTEM"
 local AUTOMATION_PATH = "/data/automation.json"
 
 local automation = Automation.new(AUTOMATION_PATH)
+local packages = PackageManager.new()
 local network = NetworkService.new()
 local ip = IPService.new()
 local datagrams = DatagramService.new()
 local streams = StreamService.new()
 local security = SecurityService.new()
+
+local packageRecoveryError = nil
+
+do
+    local recovered, recoveryError = packages:recoverPending()
+
+    if not recovered then
+        packageRecoveryError = recoveryError
+    end
+
+    local reconciled, reconcileError = packages:reconcileCurrentInstallation()
+
+    if not reconciled and not packageRecoveryError then
+        packageRecoveryError = reconcileError
+    end
+end
 
 local function waitForBack()
     while true do
@@ -122,6 +140,25 @@ local function showStatus()
     term.setTextColor(colors.cyan)
     term.write("CCIP: " .. tostring(Address.localAddress() or "UNAVAILABLE"))
 
+    if height >= 19 then
+        term.setCursorPos(4, 17)
+
+        if packageRecoveryError then
+            term.setTextColor(colors.orange)
+            term.write("Packages: RECOVERY NEEDED")
+        else
+            local pending = packages:pendingTransaction()
+
+            if pending then
+                term.setTextColor(colors.orange)
+                term.write("Packages: TRANSACTION PENDING")
+            else
+                term.setTextColor(colors.lime)
+                term.write("Packages: READY")
+            end
+        end
+    end
+
     ui.resetColors(term)
     ui.drawFooter("LEFT / SHIFT - Back")
 
@@ -197,63 +234,102 @@ local function runProgram(name, path)
     end
 end
 
+local function installedGames()
+    local installed = packages:listInstalled()
+
+    if not installed then
+        return {}
+    end
+
+    local result = {}
+
+    for _, installedItem in ipairs(installed) do
+        local packageItem = packages:getPackage(installedItem.id)
+
+        if packageItem
+            and packageItem.type == "game"
+            and packageItem.entrypoint
+            and fs.exists("/" .. packageItem.entrypoint)
+            and not fs.isDir("/" .. packageItem.entrypoint)
+        then
+            result[#result + 1] = {
+                id = packageItem.id,
+                label = packageItem.name,
+                path = "/" .. packageItem.entrypoint
+            }
+        end
+    end
+
+    table.sort(result, function(a, b)
+        return a.label < b.label
+    end)
+
+    return result
+end
+
+local GAME_COLORS = {
+    colors.blue,
+    colors.cyan,
+    colors.brown,
+    colors.purple,
+    colors.green,
+    colors.orange
+}
+
 local function createGamesScreen()
-    local width = term.getSize()
+    local games = installedGames()
+    local width, height = term.getSize()
     local buttonWidth = math.min(28, math.max(18, width - 12))
     local x = math.max(2, math.floor((width - buttonWidth) / 2) + 1)
-
     local screen = Screen.new(term, {
         columns = 1
     })
+    local actions = {}
+    local y = 5
+    local maxGameY = math.max(5, height - 7)
 
-    screen:addButton({
-        id = "breakout",
-        label = "Breakout",
-        x = x,
-        y = 5,
-        width = buttonWidth,
-        height = 2,
-        backgroundColor = colors.blue,
-        textColor = colors.white
-    })
+    for index, game in ipairs(games) do
+        if y <= maxGameY then
+            local actionId = "package-game-" .. tostring(index)
+            local background = GAME_COLORS[
+                ((index - 1) % #GAME_COLORS) + 1
+            ]
 
-    screen:addButton({
-        id = "tetris",
-        label = "Tetris",
-        x = x,
-        y = 8,
-        width = buttonWidth,
-        height = 2,
-        backgroundColor = colors.cyan,
-        textColor = colors.black
-    })
+            screen:addButton({
+                id = actionId,
+                label = game.label,
+                x = x,
+                y = y,
+                width = buttonWidth,
+                height = 2,
+                backgroundColor = background,
+                textColor = background == colors.cyan
+                    and colors.black
+                    or colors.white
+            })
 
-    screen:addButton({
-        id = "chess",
-        label = "Chess PvP",
-        x = x,
-        y = 11,
-        width = buttonWidth,
-        height = 2,
-        backgroundColor = colors.brown,
-        textColor = colors.white
-    })
+            actions[actionId] = game
+            y = y + 3
+        end
+    end
+
+    local backY = math.min(math.max(8, y), math.max(8, height - 4))
 
     screen:addButton({
         id = "back",
         label = "Back",
         x = x,
-        y = 14,
+        y = backY,
         width = buttonWidth,
         height = 2,
         backgroundColor = colors.gray,
         textColor = colors.white
     })
 
-    return screen
+    return screen, actions, #games
 end
 
-local function drawGamesScreen(screen)
+local function drawGamesScreen(screen, gameCount)
     ui.drawHeader(APP_TITLE)
 
     ui.centerText(
@@ -263,46 +339,48 @@ local function drawGamesScreen(screen)
         colors.lightGray
     )
 
+    if gameCount == 0 then
+        ui.centerText(
+            term,
+            7,
+            "No games installed.",
+            colors.orange
+        )
+        ui.centerText(
+            term,
+            9,
+            "Use: pkg install game.<name>",
+            colors.lightGray
+        )
+    end
+
     screen:draw()
     ui.drawFooter("MOUSE CLICK  UP/DOWN  ENTER  LEFT/SHIFT")
 end
 
 local function showGames()
-    local screen = createGamesScreen()
+    local screen, actions, gameCount = createGamesScreen()
 
     while true do
-        drawGamesScreen(screen)
+        drawGamesScreen(screen, gameCount)
 
         local event, a, b, c = os.pullEvent()
 
         if event == "term_resize" then
-            screen = createGamesScreen()
-
+            screen, actions, gameCount = createGamesScreen()
         elseif event == "key" and (a == keys.left or a == keys.leftShift) then
             return
-
         else
             local action, changed = screen:handleEvent(event, a, b, c)
 
-            if action == "breakout" then
-                runProgram(
-                    "Breakout",
-                    "/games/breakout.lua"
-                )
-            elseif action == "tetris" then
-                runProgram(
-                    "Tetris",
-                    "/games/tetris.lua"
-                )
-            elseif action == "chess" then
-                runProgram(
-                    "Chess PvP",
-                    "/games/chess.lua"
-                )
-            elseif action == "back" then
+            if action == "back" then
                 return
+            elseif action and actions[action] then
+                local game = actions[action]
+                runProgram(game.label, game.path)
+                screen, actions, gameCount = createGamesScreen()
             elseif changed then
-                drawGamesScreen(screen)
+                drawGamesScreen(screen, gameCount)
             end
         end
     end
@@ -456,12 +534,10 @@ local function mainLoop()
 
         if event == "term_resize" then
             screen = createDashboardScreen()
-
         elseif event == "key" and a == keys.leftShift then
             ui.clear(term)
             print(APP_TITLE .. " closed.")
             return
-
         else
             local action, changed = screen:handleEvent(
                 event,
