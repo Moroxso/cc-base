@@ -1,276 +1,142 @@
-local Game = require("chess.game")
-local Renderer = require("chess.renderer")
-local Button = require("lib.gui.button")
+local Runtime = require("lib.runtime")
+local Screen = require("lib.gui.screen")
 
 local width, height = term.getSize()
 
-if width < 51 or height < 19 then
+if width < 48 or height < 18 then
+    error("Terminal is too small for Chess menu")
+end
+
+local running = true
+
+local function resetColors()
     term.setBackgroundColor(colors.black)
     term.setTextColor(colors.white)
-    term.clear()
-    term.setCursorPos(1, 1)
-    error("Terminal is too small for Chess (need at least 51x19)")
 end
 
-local game = Game.new()
-local renderer = Renderer.new(term)
-local running = true
-local promotionIndex = 1
+local function drawHeader()
+    term.setBackgroundColor(colors.purple)
+    term.setTextColor(colors.white)
 
-local restartButton = Button.new({
-    id = "restart",
-    label = "New Game",
-    x = 36,
-    y = 14,
-    width = 15,
-    height = 1,
-    backgroundColor = colors.blue,
-    textColor = colors.white
-})
+    for y = 1, 3 do
+        term.setCursorPos(1, y)
+        term.write(string.rep(" ", width))
+    end
 
-local backButton = Button.new({
-    id = "back",
-    label = "Back",
-    x = 36,
-    y = 16,
-    width = 15,
-    height = 1,
-    backgroundColor = colors.red,
-    textColor = colors.white
-})
+    local title = "CHESS"
+    term.setCursorPos(math.max(1, math.floor((width - #title) / 2) + 1), 2)
+    term.write(title)
+    resetColors()
+end
 
-local promotionKinds = {
-    "queen",
-    "rook",
-    "bishop",
-    "knight"
-}
+local function makeScreen()
+    local buttonWidth = math.min(30, width - 10)
+    local x = math.max(2, math.floor((width - buttonWidth) / 2) + 1)
+    local screen = Screen.new(term, {columns = 1})
 
-local promotionButtons = {
-    Button.new({
-        id = "queen",
-        label = "Queen",
-        x = 35,
-        y = 9,
-        width = 8,
-        height = 1,
-        backgroundColor = colors.gray
-    }),
-    Button.new({
-        id = "rook",
-        label = "Rook",
-        x = 44,
-        y = 9,
-        width = 8,
-        height = 1,
-        backgroundColor = colors.gray
-    }),
-    Button.new({
-        id = "bishop",
-        label = "Bishop",
-        x = 35,
-        y = 11,
-        width = 8,
-        height = 1,
-        backgroundColor = colors.gray
-    }),
-    Button.new({
-        id = "knight",
-        label = "Knight",
-        x = 44,
-        y = 11,
-        width = 8,
-        height = 1,
-        backgroundColor = colors.gray
+    screen:addButton({
+        id = "local",
+        label = "Local PvP",
+        x = x,
+        y = 6,
+        width = buttonWidth,
+        height = 2,
+        backgroundColor = colors.brown,
+        textColor = colors.white
     })
-}
 
-local controls = {
-    restart = restartButton,
-    back = backButton,
-    promotions = promotionButtons
-}
+    screen:addButton({
+        id = "network",
+        label = "Network PvP",
+        x = x,
+        y = 10,
+        width = buttonWidth,
+        height = 2,
+        backgroundColor = colors.blue,
+        textColor = colors.white
+    })
 
-local function syncPromotionSelection()
-    for i, button in ipairs(promotionButtons) do
-        button:setSelected(
-            game.promotionPending ~= nil and i == promotionIndex
-        )
+    screen:addButton({
+        id = "back",
+        label = "Back",
+        x = x,
+        y = 14,
+        width = buttonWidth,
+        height = 2,
+        backgroundColor = colors.gray,
+        textColor = colors.white
+    })
+
+    return screen
+end
+
+local screen = makeScreen()
+local message = "Choose local board or CCTP multiplayer."
+
+local function draw()
+    resetColors()
+    term.clear()
+    drawHeader()
+    screen:draw()
+
+    term.setCursorPos(2, 17)
+    term.setTextColor(colors.lightGray)
+    term.write(message:sub(1, width - 2))
+
+    term.setBackgroundColor(colors.gray)
+    term.setTextColor(colors.white)
+    term.setCursorPos(1, height)
+    term.write(string.rep(" ", width))
+    local footer = "MOUSE CLICK  UP/DOWN  ENTER  SHIFT back"
+    term.setCursorPos(math.max(1, math.floor((width - #footer) / 2) + 1), height)
+    term.write(footer:sub(1, width))
+    resetColors()
+end
+
+local function launch(path, name)
+    local ok, err = Runtime.run(path)
+
+    if not ok then
+        message = name .. " failed: " .. tostring(err)
+    else
+        message = "Choose local board or CCTP multiplayer."
     end
 end
 
-local function redraw()
-    syncPromotionSelection()
-    renderer:draw(game, controls)
-end
-
-local function restartGame()
-    game:restart()
-    promotionIndex = 1
-end
-
-local function choosePromotion(index)
-    index = math.max(1, math.min(#promotionKinds, index))
-
-    if game:choosePromotion(promotionKinds[index]) then
-        promotionIndex = 1
-        return true
-    end
-
-    return false
-end
-
-local function isPointerClick(button)
-    -- Standard CC:T uses 1 for left click. Polymer's compatibility
-    -- layer has also used 0 for one of its pointer paths, so accept both.
-    return button == 1 or button == 0
-end
-
-local function handleMouse(button, x, y)
-    if not isPointerClick(button) then
-        return false
-    end
-
-    if restartButton:contains(x, y) then
-        restartGame()
-        return true
-    end
-
-    if backButton:contains(x, y) then
-        running = false
-        return true
-    end
-
-    if game.promotionPending then
-        for i, promotionButton in ipairs(promotionButtons) do
-            if promotionButton:contains(x, y) then
-                promotionIndex = i
-                choosePromotion(i)
-                return true
-            end
-        end
-
-        return false
-    end
-
-    local boardX, boardY = renderer:screenToSquare(x, y)
-
-    if boardX then
-        local result = game:clickSquare(boardX, boardY)
-
-        if result == "promotion" then
-            promotionIndex = 1
-        end
-
-        return true
-    end
-
-    return false
-end
-
-local function movePromotionCursor(key)
-    if key == keys.left then
-        promotionIndex = promotionIndex - 1
-
-        if promotionIndex < 1 then
-            promotionIndex = #promotionKinds
-        end
-
-    elseif key == keys.right then
-        promotionIndex = promotionIndex + 1
-
-        if promotionIndex > #promotionKinds then
-            promotionIndex = 1
-        end
-
-    elseif key == keys.up then
-        promotionIndex = promotionIndex - 2
-
-        if promotionIndex < 1 then
-            promotionIndex = promotionIndex + #promotionKinds
-        end
-
-    elseif key == keys.down then
-        promotionIndex = promotionIndex + 2
-
-        if promotionIndex > #promotionKinds then
-            promotionIndex = promotionIndex - #promotionKinds
-        end
-    end
-end
-
-redraw()
+draw()
 
 while running do
     local event, a, b, c = os.pullEvent()
-    local redrawNeeded = false
 
-    if event == "mouse_click" then
-        redrawNeeded = handleMouse(a, b, c)
-
-    elseif event == "key" then
-        local key = a
-
-        if key == keys.leftShift then
-            running = false
-
-        elseif key == keys.leftCtrl then
-            restartGame()
-            redrawNeeded = true
-
-        elseif game.promotionPending then
-            if key == keys.enter then
-                redrawNeeded = choosePromotion(promotionIndex)
-            elseif key == keys.left or key == keys.right or
-                key == keys.up or key == keys.down
-            then
-                movePromotionCursor(key)
-                redrawNeeded = true
-            end
-
-        elseif key == keys.left then
-            game:moveCursor(-1, 0)
-            redrawNeeded = true
-
-        elseif key == keys.right then
-            game:moveCursor(1, 0)
-            redrawNeeded = true
-
-        elseif key == keys.up then
-            game:moveCursor(0, -1)
-            redrawNeeded = true
-
-        elseif key == keys.down then
-            game:moveCursor(0, 1)
-            redrawNeeded = true
-
-        elseif key == keys.enter then
-            local result = game:activateCursor()
-
-            if result == "promotion" then
-                promotionIndex = 1
-            end
-
-            redrawNeeded = true
-        end
-
+    if event == "key" and a == keys.leftShift then
+        running = false
     elseif event == "term_resize" then
-        local newWidth, newHeight = term.getSize()
+        width, height = term.getSize()
 
-        if newWidth < 51 or newHeight < 19 then
+        if width < 48 or height < 18 then
             running = false
         else
-            redrawNeeded = true
+            screen = makeScreen()
+            draw()
         end
-    end
+    else
+        local action, changed = screen:handleEvent(event, a, b, c)
 
-    if redrawNeeded and running then
-        redraw()
+        if action == "local" then
+            launch("/games/chess_local.lua", "Local Chess")
+            draw()
+        elseif action == "network" then
+            launch("/games/chess_net.lua", "Network Chess")
+            draw()
+        elseif action == "back" then
+            running = false
+        elseif changed then
+            draw()
+        end
     end
 end
 
-term.setBackgroundColor(colors.black)
-term.setTextColor(colors.white)
+resetColors()
 term.clear()
 term.setCursorPos(1, 1)
-print("Chess closed.")
+print("Chess menu closed.")
