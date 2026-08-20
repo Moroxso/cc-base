@@ -333,9 +333,20 @@ function Controller:sendControllerHeartbeat(unit)
     )
 end
 
-function Controller:broadcastControllerState()
+local function unitIsFailSafeLatched(unit)
+    return unit
+        and unit.state == "LINK_LOST_SAFE"
+        and unit.agentMode == Protocol.MODE_SAFE
+end
+
+function Controller:broadcastControllerState(force)
     for _, unit in pairs(self.units) do
-        self:sendControllerHeartbeat(unit)
+        if force == true
+            or self.mode == Protocol.MODE_SAFE
+            or not unitIsFailSafeLatched(unit)
+        then
+            self:sendControllerHeartbeat(unit)
+        end
     end
 end
 
@@ -345,16 +356,18 @@ function Controller:setMode(mode)
         return false, "invalid_mode"
     end
 
-    if self.mode ~= mode then
-        self.mode = mode
-        self.modeRevision = self.modeRevision + 1
-        local saved, saveError = self:saveConfig()
-        if not saved then
-            return false, saveError
-        end
+    -- Every explicit operator action creates a new revision, even when the
+    -- requested mode is already active. This is what releases a turtle which
+    -- latched itself SAFE after losing the controller link.
+    self.mode = mode
+    self.modeRevision = self.modeRevision + 1
+
+    local saved, saveError = self:saveConfig()
+    if not saved then
+        return false, saveError
     end
 
-    self:broadcastControllerState()
+    self:broadcastControllerState(true)
     self:writeStatus()
     os.queueEvent("ccbase_defense_state", self.mode)
     return true
@@ -511,7 +524,12 @@ function Controller:handleHeartbeat(sender, packet)
     unit.agentVersion = cleanString(payload.agentVersion, "", 32)
     unit.color = payload.color == true
 
-    if unit.agentMode ~= self.mode then
+    -- A turtle which entered LINK_LOST_SAFE remains latched until an explicit
+    -- operator mode action produces a fresh mode revision. Periodic controller
+    -- traffic must never silently re-arm it.
+    if unit.agentMode ~= self.mode
+        and not unitIsFailSafeLatched(unit)
+    then
         self:sendControllerHeartbeat(unit)
     end
 
@@ -561,6 +579,9 @@ function Controller:sendCommand(id, command, requestId)
     local unit = self.units[tostring(id)]
     if not unit then return false, "unknown_unit" end
     if not self:isOnline(unit) then return false, "unit_offline" end
+    if unitIsFailSafeLatched(unit) then
+        return false, "unit_fail_safe_latched"
+    end
 
     unit.txSeq = (tonumber(unit.txSeq) or 0) + 1
     local saved, saveError = self:saveConfig()
@@ -630,7 +651,7 @@ function Controller:run()
     end
 
     self:writeStatus()
-    self:broadcastControllerState()
+    self:broadcastControllerState(true)
 
     local maintenanceTimer = os.startTimer(1)
     local beaconTimer = os.startTimer(Protocol.CONTROLLER_BEACON_SECONDS)
@@ -667,14 +688,14 @@ function Controller:run()
             maintenanceTimer = os.startTimer(1)
 
         elseif event == "timer" and a == beaconTimer then
-            self:broadcastControllerState()
+            self:broadcastControllerState(false)
             beaconTimer = os.startTimer(Protocol.CONTROLLER_BEACON_SECONDS)
         end
     end
 
     self.mode = Protocol.MODE_SAFE
     self.modeRevision = self.modeRevision + 1
-    self:broadcastControllerState()
+    self:broadcastControllerState(true)
     self:saveConfig()
     self:writeStatus()
 end
