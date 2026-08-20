@@ -3,10 +3,12 @@ local Protocol = require("lib.net.protocol")
 
 local ChessNet = {}
 
-ChessNet.VERSION = 1
+ChessNet.VERSION = 2
 ChessNet.APP = "ccbase.chess"
 ChessNet.PORT = 3200
+ChessNet.SPECTATOR_PORT = 3201
 ChessNet.LISTENER_ID = "chess-multiplayer"
+ChessNet.SPECTATOR_LISTENER_ID = "chess-spectator"
 
 ChessNet.TYPE_HELLO = "hello"
 ChessNet.TYPE_READY = "ready"
@@ -15,6 +17,9 @@ ChessNet.TYPE_MOVE = "move"
 ChessNet.TYPE_SYNC_REQUEST = "sync_request"
 ChessNet.TYPE_SYNC = "sync"
 ChessNet.TYPE_NEW_GAME_REQUEST = "new_game_request"
+ChessNet.TYPE_TOURNAMENT = "tournament"
+ChessNet.TYPE_SPECTATOR_HELLO = "spectator_hello"
+ChessNet.TYPE_SPECTATOR_STATE = "spectator_state"
 
 local VALID_TYPES = {
     hello = true,
@@ -23,7 +28,10 @@ local VALID_TYPES = {
     move = true,
     sync_request = true,
     sync = true,
-    new_game_request = true
+    new_game_request = true,
+    tournament = true,
+    spectator_hello = true,
+    spectator_state = true
 }
 
 local sequence = 0
@@ -115,8 +123,26 @@ function ChessNet.unlisten()
     return CCTP.unlisten(ChessNet.PORT, ChessNet.LISTENER_ID)
 end
 
+function ChessNet.listenSpectators()
+    return CCTP.listen(
+        ChessNet.SPECTATOR_PORT,
+        ChessNet.SPECTATOR_LISTENER_ID
+    )
+end
+
+function ChessNet.unlistenSpectators()
+    return CCTP.unlisten(
+        ChessNet.SPECTATOR_PORT,
+        ChessNet.SPECTATOR_LISTENER_ID
+    )
+end
+
 function ChessNet.connect(address)
     return CCTP.connect(address, ChessNet.PORT)
+end
+
+function ChessNet.connectSpectator(address)
+    return CCTP.connect(address, ChessNet.SPECTATOR_PORT)
 end
 
 return ChessNet
