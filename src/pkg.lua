@@ -51,6 +51,7 @@ local function printStatus()
     print("BASE PACKAGE MANAGER")
     print("Catalog schema: " .. tostring(catalog.schema))
     print("Catalog release: " .. tostring(catalog.generatedFor))
+    print("Source commit: " .. tostring(catalog.sourceCommit):sub(1, 12))
     print("Packages: " .. tostring(#catalog.packages))
     print("Registry: " .. (manager.registryExisted and "present" or "not created"))
     print("Installed entries: " .. tostring(#installed))
@@ -168,16 +169,21 @@ local function reconcile()
 end
 
 local function verify()
-    local available, err = manager:listAvailable()
+    local installed, installedError = manager:listInstalled()
 
-    if not available then
-        return fail(err)
+    if not installed then
+        return fail(installedError)
     end
 
     local failed = 0
 
-    for _, packageItem in ipairs(available) do
-        if #(packageItem.files or {}) > 0 then
+    for _, installedItem in ipairs(installed) do
+        local packageItem, packageError = manager:getPackage(installedItem.id)
+
+        if not packageItem then
+            print("[ERR] " .. installedItem.id .. ": " .. tostring(packageError))
+            failed = failed + 1
+        elseif #(packageItem.files or {}) > 0 then
             local state, inspectError = manager:inspectPackage(packageItem)
 
             if not state then
@@ -199,7 +205,92 @@ local function verify()
         end
     end
 
+    if #installed == 0 then
+        print("No installed packages in registry.")
+    end
+
     return failed == 0
+end
+
+local function plan(id)
+    if not id or id == "" then
+        return fail("Usage: pkg plan <package-id>")
+    end
+
+    local result, err = manager:planInstall(id)
+
+    if not result then
+        return fail(err)
+    end
+
+    print("INSTALL PLAN")
+    print("Package: " .. result.package.id .. " " .. result.package.version)
+    print("Already installed: " .. (result.alreadyInstalled and "yes" or "no"))
+    print("Reuse files: " .. tostring(result.reused))
+    print("Download files: " .. tostring(#result.download))
+    print("Net growth: " .. Storage.formatBytes(result.finalDelta))
+    print("Reserve: " .. Storage.formatBytes(result.storage.reserve))
+    print("Required free: " .. Storage.formatBytes(result.storage.required))
+    print("Current free: " .. Storage.formatBytes(result.storage.free))
+    print("Safe: " .. (result.storage.safe and "yes" or "no"))
+    return true
+end
+
+local function install(id)
+    if not id or id == "" then
+        return fail("Usage: pkg install <package-id>")
+    end
+
+    print("Installing " .. id .. "...")
+
+    local result, err = manager:install(id)
+
+    if not result then
+        return fail(err)
+    end
+
+    if result.alreadyInstalled then
+        print("Already installed: " .. result.id .. " " .. result.version)
+    else
+        print("Installed: " .. result.id .. " " .. result.version)
+        print("Downloaded files: " .. tostring(result.downloadedFiles))
+        print("Reused files: " .. tostring(result.reusedFiles))
+        print("Written: " .. Storage.formatBytes(result.bytesWritten))
+    end
+
+    if result.integrityRefreshed == false then
+        print("Integrity baseline: WARNING " .. tostring(result.integrityError))
+    else
+        print("Integrity baseline: refreshed")
+    end
+
+    return true
+end
+
+local function remove(id)
+    if not id or id == "" then
+        return fail("Usage: pkg remove <package-id>")
+    end
+
+    print("Removing " .. id .. "...")
+
+    local result, err = manager:remove(id)
+
+    if not result then
+        return fail(err)
+    end
+
+    print("Removed: " .. result.id)
+    print("Removed files: " .. tostring(result.removedFiles))
+    print("Freed: " .. Storage.formatBytes(result.freedBytes))
+
+    if result.integrityRefreshed == false then
+        print("Integrity baseline: WARNING " .. tostring(result.integrityError))
+    else
+        print("Integrity baseline: refreshed")
+    end
+
+    return true
 end
 
 local function usage()
@@ -209,8 +300,9 @@ local function usage()
     print("  info <package-id>")
     print("  reconcile")
     print("  verify")
-    print("")
-    print("Install/remove arrive in the next 0.21 alpha.")
+    print("  plan <package-id>")
+    print("  install <package-id>")
+    print("  remove <package-id>")
 end
 
 local ok
@@ -225,6 +317,12 @@ elseif command == "reconcile" then
     ok = reconcile()
 elseif command == "verify" then
     ok = verify()
+elseif command == "plan" then
+    ok = plan(args[2])
+elseif command == "install" then
+    ok = install(args[2])
+elseif command == "remove" then
+    ok = remove(args[2])
 elseif command == "help" or command == "--help" or command == "-h" then
     usage()
     ok = true
