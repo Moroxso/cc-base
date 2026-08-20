@@ -3,6 +3,7 @@ local Runtime = require("lib.runtime")
 local Automation = require("lib.automation")
 local Screen = require("lib.gui.screen")
 local PackageManager = require("lib.package.manager")
+local ServiceSupervisor = require("lib.system.service_supervisor")
 local NetworkService = require("lib.net.service")
 local IPService = require("lib.net.ip_service")
 local DatagramService = require("lib.net.datagram_service")
@@ -20,6 +21,60 @@ local ip = IPService.new()
 local datagrams = DatagramService.new()
 local streams = StreamService.new()
 local security = SecurityService.new()
+local supervisor = ServiceSupervisor.new()
+
+local function registerService(spec)
+    local ok, err = supervisor:register(spec)
+
+    if not ok then
+        error(err, 0)
+    end
+end
+
+registerService({
+    id = "automation",
+    label = "Automation",
+    instance = automation,
+    restartPolicy = "always"
+})
+
+registerService({
+    id = "network",
+    label = "Network Core",
+    instance = network,
+    restartPolicy = "always"
+})
+
+registerService({
+    id = "ip",
+    label = "CCIP",
+    instance = ip,
+    restartPolicy = "always",
+    dependencies = {"network"}
+})
+
+registerService({
+    id = "datagrams",
+    label = "CCDP",
+    instance = datagrams,
+    restartPolicy = "always",
+    dependencies = {"ip"}
+})
+
+registerService({
+    id = "streams",
+    label = "CCTP",
+    instance = streams,
+    restartPolicy = "always",
+    dependencies = {"ip"}
+})
+
+registerService({
+    id = "security",
+    label = "Security",
+    instance = security,
+    restartPolicy = "always"
+})
 
 local packageRecoveryError = nil
 
@@ -157,6 +212,28 @@ local function showStatus()
                 term.write("Packages: READY")
             end
         end
+    end
+
+    if height >= 20 then
+        local serviceSummary = supervisor:summary()
+
+        term.setCursorPos(4, 18)
+
+        if serviceSummary.failed > 0 then
+            term.setTextColor(colors.red)
+        elseif serviceSummary.restarting > 0 or serviceSummary.starting > 0 then
+            term.setTextColor(colors.orange)
+        elseif serviceSummary.running == serviceSummary.total then
+            term.setTextColor(colors.lime)
+        else
+            term.setTextColor(colors.orange)
+        end
+
+        term.write(string.format(
+            "Services: %d/%d RUNNING",
+            serviceSummary.running,
+            serviceSummary.total
+        ))
     end
 
     ui.resetColors(term)
@@ -555,24 +632,18 @@ local function mainLoop()
     end
 end
 
+local function runMainLoop()
+    local ok, err = pcall(mainLoop)
+    supervisor:stop()
+
+    if not ok then
+        error(err, 0)
+    end
+end
+
 parallel.waitForAny(
-    mainLoop,
+    runMainLoop,
     function()
-        automation:run()
-    end,
-    function()
-        network:run()
-    end,
-    function()
-        ip:run()
-    end,
-    function()
-        datagrams:run()
-    end,
-    function()
-        streams:run()
-    end,
-    function()
-        security:run()
+        supervisor:run()
     end
 )
