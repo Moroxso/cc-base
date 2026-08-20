@@ -2,12 +2,14 @@ local Manifest = require("lib.package.manifest")
 local Registry = require("lib.package.registry")
 local Storage = require("lib.package.storage")
 local Hash = require("lib.package.hash")
+local Journal = require("lib.package.journal")
 
 local Manager = {}
 Manager.__index = Manager
 
 Manager.DEFAULT_CATALOG_PATH = "/packages.json"
 Manager.DEFAULT_REGISTRY_PATH = Registry.DEFAULT_PATH
+Manager.DEFAULT_JOURNAL_PATH = Journal.DEFAULT_PATH
 Manager.VERSION_PATH = "/.project-version"
 Manager.SPACE_RESERVE = 8192
 Manager.OWNER = "Moroxso"
@@ -69,13 +71,13 @@ local function absoluteTarget(target)
     return "/" .. tostring(target or ""):gsub("^/+", "")
 end
 
-local function sourceUrl(catalog, source)
+local function sourceUrl(sourceCommit, source)
     return "https://raw.githubusercontent.com/"
         .. Manager.OWNER
         .. "/"
         .. Manager.REPO
         .. "/"
-        .. catalog.sourceCommit
+        .. sourceCommit
         .. "/"
         .. source
 end
@@ -116,12 +118,46 @@ local function contains(array, value)
     return false
 end
 
+local function copySpec(file)
+    return {
+        source = file.source,
+        target = file.target,
+        size = file.size,
+        hash = file.hash
+    }
+end
+
+local function packageSnapshot(packageItem)
+    local files = {}
+
+    for _, file in ipairs(packageItem.files or {}) do
+        files[#files + 1] = {
+            target = file.target,
+            size = file.size,
+            hash = file.hash
+        }
+    end
+
+    return files
+end
+
+local function specMap(files)
+    local result = {}
+
+    for _, file in ipairs(files or {}) do
+        result[file.target] = file
+    end
+
+    return result
+end
+
 function Manager.new(options)
     options = type(options) == "table" and options or {}
 
     return setmetatable({
         catalogPath = options.catalogPath or Manager.DEFAULT_CATALOG_PATH,
         registryPath = options.registryPath or Manager.DEFAULT_REGISTRY_PATH,
+        journalPath = options.journalPath or Manager.DEFAULT_JOURNAL_PATH,
         catalog = nil,
         registry = nil,
         registryExisted = false
@@ -251,7 +287,7 @@ function Manager:packageFootprint(packageItem)
     return total
 end
 
-function Manager:verifyContent(file, content)
+function Manager:verifySpec(file, content)
     local catalog, catalogError = self:loadCatalog()
 
     if not catalog then
@@ -327,7 +363,7 @@ function Manager:inspectPackage(packageOrId)
                 }
             else
                 result.bytes = result.bytes + #content
-                local valid, reason = self:verifyContent(file, content)
+                local valid, reason = self:verifySpec(file, content)
 
                 if not valid then
                     result.complete = false
@@ -373,8 +409,12 @@ function Manager:reconcileCurrentInstallation()
 
             local existing = Registry.get(registry, packageItem.id)
 
-            if not existing or existing.version ~= version or existing.managedBy ~= "deploy" then
+            if not existing
+                or existing.version ~= version
+                or existing.managedBy ~= "deploy"
+            then
                 local drive = Storage.getDrive("/") or "unknown"
+
                 Registry.setInstalled(registry, packageItem.id, {
                     version = version,
                     source = "deploy",
@@ -393,18 +433,22 @@ function Manager:reconcileCurrentInstallation()
 
             if state.complete then
                 local existing = Registry.get(registry, packageItem.id)
-
-                if not existing
+                local needsSnapshot = not existing
                     or existing.version ~= packageItem.version
                     or existing.managedBy ~= "package"
-                then
+                    or existing.sourceCommit ~= catalog.sourceCommit
+                    or #(existing.files or {}) ~= #(packageItem.files or {})
+
+                if needsSnapshot then
                     local drive = Storage.getDrive("/") or "unknown"
 
                     Registry.setInstalled(registry, packageItem.id, {
                         version = packageItem.version,
                         source = existing and existing.source or "legacy-bundle",
                         managedBy = "package",
-                        mount = drive
+                        mount = drive,
+                        sourceCommit = catalog.sourceCommit,
+                        files = packageSnapshot(packageItem)
                     })
 
                     changed[#changed + 1] = packageItem.id
@@ -413,10 +457,12 @@ function Manager:reconcileCurrentInstallation()
         end
     end
 
-    local ok, saveError = self:saveRegistry()
+    if #changed > 0 or not self.registryExisted then
+        local ok, saveError = self:saveRegistry()
 
-    if not ok then
-        return nil, saveError
+        if not ok then
+            return nil, saveError
+        end
     end
 
     table.sort(changed)
@@ -448,7 +494,64 @@ function Manager:dependencyStatus(packageItem)
     }
 end
 
-function Manager:planInstall(id)
+function Manager:pendingTransaction()
+    local journal, existsOrError = Journal.load(self.journalPath)
+
+    if journal then
+        local done, total = Journal.progress(journal)
+
+        return {
+            transaction = journal,
+            done = done,
+            total = total
+        }
+    end
+
+    if existsOrError == false then
+        return nil
+    end
+
+    return nil, existsOrError
+end
+
+function Manager:ensureNoPending()
+    local pending, err = self:pendingTransaction()
+
+    if err then
+        return false, err
+    end
+
+    if pending then
+        return false,
+            "package_pending_transaction:"
+            .. pending.transaction.operation
+            .. ":"
+            .. pending.transaction.packageId
+    end
+
+    return true
+end
+
+function Manager:refreshIntegrity()
+    local loaded, Integrity = pcall(require, "lib.security.integrity")
+
+    if not loaded
+        or type(Integrity) ~= "table"
+        or type(Integrity.createBaseline) ~= "function"
+    then
+        return false, "package_integrity_service_unavailable"
+    end
+
+    local baseline, err = Integrity.createBaseline()
+
+    if not baseline then
+        return false, err or "package_integrity_refresh_failed"
+    end
+
+    return true
+end
+
+function Manager:planSync(id, operation)
     local packageItem, packageError = self:getPackage(id)
 
     if not packageItem then
@@ -457,6 +560,12 @@ function Manager:planInstall(id)
 
     if packageItem.managedBy ~= "package" then
         return nil, "package_managed_by_deploy:" .. packageItem.id
+    end
+
+    local noPending, pendingError = self:ensureNoPending()
+
+    if not noPending then
+        return nil, pendingError
     end
 
     local reconciled, reconcileError = self:reconcileCurrentInstallation()
@@ -476,6 +585,11 @@ function Manager:planInstall(id)
     end
 
     local installed = Registry.get(self.registry, packageItem.id)
+
+    if operation ~= "install" and not installed then
+        return nil, "package_not_installed:" .. packageItem.id
+    end
+
     local state, stateError = self:inspectPackage(packageItem)
 
     if not state then
@@ -485,20 +599,27 @@ function Manager:planInstall(id)
     if installed and state.complete and installed.version == packageItem.version then
         return {
             package = packageItem,
-            alreadyInstalled = true,
+            operation = operation,
+            alreadyCurrent = true,
             reused = #packageItem.files,
-            download = {},
+            files = {},
+            removeFiles = {},
             finalDelta = 0,
             storage = Storage.plan("/", 0, 0, Manager.SPACE_RESERVE)
         }
     end
 
-    local downloadFiles = {}
+    local oldByTarget = installed and specMap(installed.files) or {}
+    local newByTarget = specMap(packageItem.files)
+    local files = {}
+    local removeFiles = {}
     local reused = 0
     local finalDelta = 0
 
     for _, file in ipairs(packageItem.files or {}) do
         local path = absoluteTarget(file.target)
+        local step = copySpec(file)
+        step.state = "pending"
 
         if fs.exists(path) then
             if fs.isDir(path) then
@@ -506,16 +627,74 @@ function Manager:planInstall(id)
             end
 
             local content = readAll(path)
-            local valid, reason = self:verifyContent(file, content)
 
-            if not valid then
-                return nil, "package_target_conflict:" .. file.target .. ":" .. tostring(reason)
+            if content == nil then
+                return nil, "package_target_unreadable:" .. file.target
             end
 
-            reused = reused + 1
+            local currentValid = self:verifySpec(file, content)
+
+            if currentValid then
+                step.state = "done"
+                reused = reused + 1
+            else
+                if not installed then
+                    return nil, "package_target_conflict:" .. file.target
+                end
+
+                local oldSpec = oldByTarget[file.target]
+
+                if not oldSpec then
+                    return nil, "package_target_untracked:" .. file.target
+                end
+
+                local oldValid, oldReason = self:verifySpec(oldSpec, content)
+
+                if not oldValid then
+                    return nil,
+                        "package_modified_file:"
+                        .. file.target
+                        .. ":"
+                        .. tostring(oldReason)
+                end
+
+                step.oldHash = oldSpec.hash
+                step.oldSize = oldSpec.size
+                finalDelta = finalDelta
+                    + math.max(0, (file.size or #content) - #content)
+            end
         else
-            downloadFiles[#downloadFiles + 1] = file
             finalDelta = finalDelta + (file.size or 0)
+        end
+
+        files[#files + 1] = step
+    end
+
+    if installed then
+        for _, oldFile in ipairs(installed.files or {}) do
+            if not newByTarget[oldFile.target] then
+                local path = absoluteTarget(oldFile.target)
+
+                if fs.exists(path) and not fs.isDir(path) then
+                    local content = readAll(path)
+                    local valid, reason = self:verifySpec(oldFile, content)
+
+                    if not valid then
+                        return nil,
+                            "package_modified_obsolete_file:"
+                            .. oldFile.target
+                            .. ":"
+                            .. tostring(reason)
+                    end
+                end
+
+                removeFiles[#removeFiles + 1] = {
+                    target = oldFile.target,
+                    oldHash = oldFile.hash,
+                    oldSize = oldFile.size,
+                    state = "pending"
+                }
+            end
         end
     end
 
@@ -523,28 +702,434 @@ function Manager:planInstall(id)
 
     return {
         package = packageItem,
-        alreadyInstalled = false,
+        operation = operation,
+        alreadyCurrent = false,
         reused = reused,
-        download = downloadFiles,
+        files = files,
+        removeFiles = removeFiles,
         finalDelta = finalDelta,
         storage = storage
     }
 end
 
-function Manager:refreshIntegrity()
-    local loaded, Integrity = pcall(require, "lib.security.integrity")
+function Manager:planInstall(id)
+    return self:planSync(id, "install")
+end
 
-    if not loaded or type(Integrity) ~= "table" or type(Integrity.createBaseline) ~= "function" then
-        return false, "package_integrity_service_unavailable"
+function Manager:planUpdate(id)
+    return self:planSync(id, "update")
+end
+
+function Manager:createSyncJournal(plan)
+    local catalog, catalogError = self:loadCatalog()
+
+    if not catalog then
+        return nil, catalogError
     end
 
-    local baseline, err = Integrity.createBaseline()
+    local journal = Journal.create(
+        plan.operation,
+        plan.package,
+        catalog.sourceCommit,
+        plan.files,
+        plan.removeFiles
+    )
 
-    if not baseline then
-        return false, err or "package_integrity_refresh_failed"
+    local ok, err = Journal.save(journal, self.journalPath)
+
+    if not ok then
+        return nil, err
     end
 
-    return true
+    return journal
+end
+
+function Manager:verifyJournalFile(step, content)
+    return self:verifySpec({
+        target = step.target,
+        size = step.size,
+        hash = step.hash
+    }, content)
+end
+
+function Manager:executeSyncJournal(journal)
+    local registry, registryError = self:loadRegistry(true)
+
+    if not registry then
+        return nil, registryError
+    end
+
+    local bytesWritten = 0
+    local downloadedFiles = 0
+
+    for _, step in ipairs(journal.files or {}) do
+        local target = absoluteTarget(step.target)
+
+        if step.state == "done" then
+            local completedContent = readAll(target)
+            local completedValid = self:verifyJournalFile(step, completedContent)
+
+            if not completedValid then
+                step.state = "pending"
+
+                local saved, saveError = Journal.save(journal, self.journalPath)
+
+                if not saved then
+                    return nil, saveError
+                end
+            end
+        end
+
+        if step.state ~= "done" then
+            local existing = readAll(target)
+
+            if existing ~= nil then
+                local alreadyNew = self:verifyJournalFile(step, existing)
+
+                if alreadyNew then
+                    step.state = "done"
+
+                    local saved, saveError = Journal.save(journal, self.journalPath)
+
+                    if not saved then
+                        return nil, saveError
+                    end
+                else
+                    if not step.oldHash then
+                        return nil, "package_recovery_target_conflict:" .. step.target
+                    end
+
+                    local oldValid, oldReason = self:verifySpec({
+                        target = step.target,
+                        size = step.oldSize,
+                        hash = step.oldHash
+                    }, existing)
+
+                    if not oldValid then
+                        return nil,
+                            "package_recovery_modified_file:"
+                            .. step.target
+                            .. ":"
+                            .. tostring(oldReason)
+                    end
+                end
+            end
+
+            if step.state ~= "done" then
+                local content, downloadError = download(
+                    sourceUrl(journal.sourceCommit, step.source)
+                )
+
+                if not content then
+                    return nil, downloadError .. ":" .. step.source
+                end
+
+                local valid, verifyError = self:verifyJournalFile(step, content)
+
+                if not valid then
+                    return nil, verifyError .. ":" .. step.source
+                end
+
+                local currentContent = readAll(target)
+                local currentSize = currentContent and #currentContent or 0
+                local free, freeError = Storage.getFreeSpace("/")
+
+                if free == nil then
+                    return nil, "package_space_unknown:" .. tostring(freeError)
+                end
+
+                if free ~= math.huge
+                    and free + currentSize < #content + Manager.SPACE_RESERVE
+                then
+                    return nil, "package_space_exhausted_during_transaction:" .. step.target
+                end
+
+                if fs.exists(target) then
+                    local deleted, deleteError = pcall(fs.delete, target)
+
+                    if not deleted then
+                        return nil,
+                            "package_replace_delete_failed:"
+                            .. step.target
+                            .. ":"
+                            .. tostring(deleteError)
+                    end
+                end
+
+                local writeOk, writeError = writeFile(target, content)
+
+                if not writeOk then
+                    if currentContent ~= nil then
+                        pcall(writeFile, target, currentContent)
+                    end
+
+                    return nil, writeError .. ":" .. step.target
+                end
+
+                local written = readAll(target)
+                local writtenValid, writtenError = self:verifyJournalFile(step, written)
+
+                if not writtenValid then
+                    if fs.exists(target) then
+                        pcall(fs.delete, target)
+                    end
+
+                    if currentContent ~= nil then
+                        pcall(writeFile, target, currentContent)
+                    end
+
+                    return nil,
+                        "package_written_verification_failed:"
+                        .. step.target
+                        .. ":"
+                        .. tostring(writtenError)
+                end
+
+                bytesWritten = bytesWritten + #content
+                downloadedFiles = downloadedFiles + 1
+                step.state = "done"
+
+                local saved, saveError = Journal.save(journal, self.journalPath)
+
+                if not saved then
+                    return nil, saveError
+                end
+            end
+        end
+    end
+
+    for _, step in ipairs(journal.removeFiles or {}) do
+        if step.state ~= "done" then
+            local path = absoluteTarget(step.target)
+
+            if fs.exists(path) then
+                if fs.isDir(path) then
+                    return nil, "package_remove_target_is_directory:" .. step.target
+                end
+
+                local content = readAll(path)
+
+                if content == nil then
+                    return nil, "package_remove_target_unreadable:" .. step.target
+                end
+
+                if step.oldHash then
+                    local valid, reason = self:verifySpec({
+                        target = step.target,
+                        size = step.oldSize,
+                        hash = step.oldHash
+                    }, content)
+
+                    if not valid then
+                        return nil,
+                            "package_remove_modified_file:"
+                            .. step.target
+                            .. ":"
+                            .. tostring(reason)
+                    end
+                end
+
+                local ok, deleteError = pcall(fs.delete, path)
+
+                if not ok then
+                    return nil,
+                        "package_delete_failed:"
+                        .. step.target
+                        .. ":"
+                        .. tostring(deleteError)
+                end
+            end
+
+            step.state = "done"
+
+            local saved, saveError = Journal.save(journal, self.journalPath)
+
+            if not saved then
+                return nil, saveError
+            end
+        end
+    end
+
+    for _, step in ipairs(journal.files or {}) do
+        local content = readAll(absoluteTarget(step.target))
+        local valid, reason = self:verifyJournalFile(step, content)
+
+        if not valid then
+            return nil,
+                "package_transaction_incomplete:"
+                .. step.target
+                .. ":"
+                .. tostring(reason)
+        end
+    end
+
+    local drive = Storage.getDrive("/") or "unknown"
+    local snapshot = {}
+
+    for _, step in ipairs(journal.files or {}) do
+        snapshot[#snapshot + 1] = {
+            target = step.target,
+            size = step.size,
+            hash = step.hash
+        }
+    end
+
+    Registry.setInstalled(registry, journal.packageId, {
+        version = journal.version,
+        source = "github:" .. journal.sourceCommit,
+        managedBy = "package",
+        mount = drive,
+        sourceCommit = journal.sourceCommit,
+        files = snapshot
+    })
+
+    local saved, saveError = self:saveRegistry()
+
+    if not saved then
+        return nil, saveError
+    end
+
+    local integrityOk, integrityError = self:refreshIntegrity()
+    local cleared, clearError = Journal.clear(self.journalPath)
+
+    if not cleared then
+        return nil, clearError
+    end
+
+    return {
+        id = journal.packageId,
+        version = journal.version,
+        operation = journal.operation,
+        downloadedFiles = downloadedFiles,
+        bytesWritten = bytesWritten,
+        integrityRefreshed = integrityOk,
+        integrityError = integrityError,
+        recovered = false
+    }
+end
+
+function Manager:executeRemoveJournal(journal)
+    local registry, registryError = self:loadRegistry(true)
+
+    if not registry then
+        return nil, registryError
+    end
+
+    local freedBytes = 0
+    local removedFiles = 0
+
+    for _, step in ipairs(journal.removeFiles or {}) do
+        if step.state ~= "done" then
+            local path = absoluteTarget(step.target)
+
+            if fs.exists(path) then
+                if fs.isDir(path) then
+                    return nil, "package_remove_target_is_directory:" .. step.target
+                end
+
+                local content = readAll(path)
+
+                if content == nil then
+                    return nil, "package_remove_target_unreadable:" .. step.target
+                end
+
+                if step.oldHash then
+                    local valid, reason = self:verifySpec({
+                        target = step.target,
+                        size = step.oldSize,
+                        hash = step.oldHash
+                    }, content)
+
+                    if not valid then
+                        return nil,
+                            "package_remove_modified_file:"
+                            .. step.target
+                            .. ":"
+                            .. tostring(reason)
+                    end
+                end
+
+                freedBytes = freedBytes + #content
+                local ok, deleteError = pcall(fs.delete, path)
+
+                if not ok then
+                    return nil,
+                        "package_delete_failed:"
+                        .. step.target
+                        .. ":"
+                        .. tostring(deleteError)
+                end
+
+                removedFiles = removedFiles + 1
+            end
+
+            step.state = "done"
+
+            local saved, saveError = Journal.save(journal, self.journalPath)
+
+            if not saved then
+                return nil, saveError
+            end
+        end
+    end
+
+    Registry.removeInstalled(registry, journal.packageId)
+
+    local saved, saveError = self:saveRegistry()
+
+    if not saved then
+        return nil, saveError
+    end
+
+    local integrityOk, integrityError = self:refreshIntegrity()
+    local cleared, clearError = Journal.clear(self.journalPath)
+
+    if not cleared then
+        return nil, clearError
+    end
+
+    return {
+        id = journal.packageId,
+        operation = "remove",
+        freedBytes = freedBytes,
+        removedFiles = removedFiles,
+        integrityRefreshed = integrityOk,
+        integrityError = integrityError,
+        recovered = false
+    }
+end
+
+function Manager:executeJournal(journal)
+    if journal.operation == "remove" then
+        return self:executeRemoveJournal(journal)
+    end
+
+    return self:executeSyncJournal(journal)
+end
+
+function Manager:recoverPending()
+    local journal, existsOrError = Journal.load(self.journalPath)
+
+    if not journal then
+        if existsOrError == false then
+            return {
+                recovered = false,
+                pending = false
+            }
+        end
+
+        return nil, existsOrError
+    end
+
+    local result, err = self:executeJournal(journal)
+
+    if not result then
+        return nil, err
+    end
+
+    result.recovered = true
+    result.pending = false
+    return result
 end
 
 function Manager:install(id)
@@ -554,7 +1139,7 @@ function Manager:install(id)
         return nil, planError
     end
 
-    if plan.alreadyInstalled then
+    if plan.alreadyCurrent then
         return {
             id = plan.package.id,
             version = plan.package.version,
@@ -578,95 +1163,108 @@ function Manager:install(id)
             .. tostring(plan.storage.free)
     end
 
-    local catalog = self.catalog
-    local created = {}
-    local bytesWritten = 0
+    local journal, journalError = self:createSyncJournal(plan)
 
-    local function rollback()
-        for index = #created, 1, -1 do
-            local path = created[index]
-
-            if fs.exists(path) and not fs.isDir(path) then
-                pcall(fs.delete, path)
-            end
-        end
+    if not journal then
+        return nil, journalError
     end
 
-    for _, file in ipairs(plan.download) do
-        local content, downloadError = download(sourceUrl(catalog, file.source))
+    local result, executeError = self:executeSyncJournal(journal)
 
-        if not content then
-            rollback()
-            return nil, downloadError .. ":" .. file.source
-        end
-
-        local valid, verifyError = self:verifyContent(file, content)
-
-        if not valid then
-            rollback()
-            return nil, verifyError .. ":" .. file.source
-        end
-
-        local free = Storage.getFreeSpace("/")
-
-        if free ~= nil and free ~= math.huge and free < #content + Manager.SPACE_RESERVE then
-            rollback()
-            return nil, "package_space_exhausted_during_install:" .. file.target
-        end
-
-        local target = absoluteTarget(file.target)
-        local writeOk, writeError = writeFile(target, content)
-
-        if not writeOk then
-            rollback()
-            return nil, writeError .. ":" .. file.target
-        end
-
-        created[#created + 1] = target
-        bytesWritten = bytesWritten + #content
-
-        local written = readAll(target)
-        local writtenValid, writtenError = self:verifyContent(file, written)
-
-        if not writtenValid then
-            rollback()
-            return nil, "package_written_verification_failed:" .. file.target .. ":" .. tostring(writtenError)
-        end
+    if not result then
+        return nil, executeError
     end
 
-    local finalState, stateError = self:inspectPackage(plan.package)
+    result.reusedFiles = plan.reused
+    result.alreadyInstalled = false
+    return result
+end
 
-    if not finalState or not finalState.complete then
-        rollback()
-        return nil, stateError or "package_install_incomplete"
+function Manager:update(id)
+    local plan, planError = self:planUpdate(id)
+
+    if not plan then
+        return nil, planError
     end
 
-    local drive = Storage.getDrive("/") or "unknown"
-    Registry.setInstalled(self.registry, plan.package.id, {
-        version = plan.package.version,
-        source = "github:" .. catalog.sourceCommit,
-        managedBy = "package",
-        mount = drive
-    })
-
-    local saved, saveError = self:saveRegistry()
-
-    if not saved then
-        return nil, saveError
+    if plan.alreadyCurrent then
+        return {
+            id = plan.package.id,
+            version = plan.package.version,
+            alreadyCurrent = true,
+            downloadedFiles = 0,
+            reusedFiles = plan.reused,
+            bytesWritten = 0,
+            integrityRefreshed = true
+        }
     end
 
-    local integrityOk, integrityError = self:refreshIntegrity()
+    if plan.storage.free == nil then
+        return nil, "package_space_unknown"
+    end
 
-    return {
-        id = plan.package.id,
-        version = plan.package.version,
-        alreadyInstalled = false,
-        downloadedFiles = #plan.download,
-        reusedFiles = plan.reused,
-        bytesWritten = bytesWritten,
-        integrityRefreshed = integrityOk,
-        integrityError = integrityError
-    }
+    if not plan.storage.safe then
+        return nil,
+            "package_insufficient_space:required="
+            .. tostring(plan.storage.required)
+            .. ":free="
+            .. tostring(plan.storage.free)
+    end
+
+    local journal, journalError = self:createSyncJournal(plan)
+
+    if not journal then
+        return nil, journalError
+    end
+
+    local result, executeError = self:executeSyncJournal(journal)
+
+    if not result then
+        return nil, executeError
+    end
+
+    result.reusedFiles = plan.reused
+    result.alreadyCurrent = false
+    return result
+end
+
+function Manager:repair(id)
+    local plan, planError = self:planSync(id, "repair")
+
+    if not plan then
+        return nil, planError
+    end
+
+    if plan.alreadyCurrent then
+        return {
+            id = plan.package.id,
+            version = plan.package.version,
+            alreadyCurrent = true,
+            downloadedFiles = 0,
+            reusedFiles = plan.reused,
+            bytesWritten = 0,
+            integrityRefreshed = true
+        }
+    end
+
+    if plan.storage.free == nil or not plan.storage.safe then
+        return nil, "package_repair_insufficient_space"
+    end
+
+    local journal, journalError = self:createSyncJournal(plan)
+
+    if not journal then
+        return nil, journalError
+    end
+
+    local result, executeError = self:executeSyncJournal(journal)
+
+    if not result then
+        return nil, executeError
+    end
+
+    result.reusedFiles = plan.reused
+    return result
 end
 
 function Manager:installedDependents(id)
@@ -699,6 +1297,18 @@ function Manager:installedDependents(id)
 end
 
 function Manager:remove(id)
+    local noPending, pendingError = self:ensureNoPending()
+
+    if not noPending then
+        return nil, pendingError
+    end
+
+    local reconciled, reconcileError = self:reconcileCurrentInstallation()
+
+    if not reconciled then
+        return nil, reconcileError
+    end
+
     local packageItem, packageError = self:getPackage(id)
 
     if not packageItem then
@@ -715,7 +1325,9 @@ function Manager:remove(id)
         return nil, registryError
     end
 
-    if not Registry.isInstalled(registry, id) then
+    local installed = Registry.get(registry, id)
+
+    if not installed then
         return nil, "package_not_installed:" .. id
     end
 
@@ -729,45 +1341,60 @@ function Manager:remove(id)
         return nil, "package_has_dependents:" .. table.concat(dependents, ",")
     end
 
-    local state, stateError = self:inspectPackage(packageItem)
-
-    if not state then
-        return nil, stateError
+    if #(installed.files or {}) == 0 then
+        return nil, "package_registry_snapshot_missing:" .. id
     end
 
-    if not state.complete then
-        return nil, "package_modified_or_incomplete:" .. id
-    end
+    local removeFiles = {}
 
-    for _, file in ipairs(packageItem.files or {}) do
-        local path = absoluteTarget(file.target)
+    for _, oldFile in ipairs(installed.files or {}) do
+        local path = absoluteTarget(oldFile.target)
 
         if fs.exists(path) then
-            local ok, deleteError = pcall(fs.delete, path)
+            if fs.isDir(path) then
+                return nil, "package_remove_target_is_directory:" .. oldFile.target
+            end
 
-            if not ok then
-                return nil, "package_delete_failed:" .. file.target .. ":" .. tostring(deleteError)
+            local content = readAll(path)
+            local valid, reason = self:verifySpec(oldFile, content)
+
+            if not valid then
+                return nil,
+                    "package_modified_or_incomplete:"
+                    .. id
+                    .. ":"
+                    .. oldFile.target
+                    .. ":"
+                    .. tostring(reason)
             end
         end
+
+        removeFiles[#removeFiles + 1] = {
+            target = oldFile.target,
+            oldHash = oldFile.hash,
+            oldSize = oldFile.size,
+            state = "pending"
+        }
     end
 
-    Registry.removeInstalled(registry, id)
+    local journal = Journal.create(
+        "remove",
+        {
+            id = id,
+            version = installed.version
+        },
+        installed.sourceCommit,
+        {},
+        removeFiles
+    )
 
-    local saved, saveError = self:saveRegistry()
+    local saved, saveError = Journal.save(journal, self.journalPath)
 
     if not saved then
         return nil, saveError
     end
 
-    local integrityOk, integrityError = self:refreshIntegrity()
-
-    return {
-        id = id,
-        freedBytes = state.bytes,
-        removedFiles = #packageItem.files,
-        integrityRefreshed = integrityOk,
-        integrityError = integrityError
-    }
+    return self:executeRemoveJournal(journal)
 end
 
 return Manager
