@@ -8,6 +8,35 @@ local fileNames = {
     "a", "b", "c", "d", "e", "f", "g", "h"
 }
 
+local function formatClock(milliseconds)
+    milliseconds = math.max(0, math.floor(tonumber(milliseconds) or 0))
+    local totalSeconds = math.ceil(milliseconds / 1000)
+    local minutes = math.floor(totalSeconds / 60)
+    local seconds = totalSeconds % 60
+    return string.format("%02d:%02d", minutes, seconds)
+end
+
+local function scoreText(value)
+    value = tonumber(value) or 0
+
+    if value == math.floor(value) then
+        return tostring(math.floor(value))
+    end
+
+    return string.format("%.1f", value)
+end
+
+local function shortName(value, maximum)
+    value = tostring(value or "?")
+    maximum = maximum or 10
+
+    if #value > maximum then
+        return value:sub(1, maximum)
+    end
+
+    return value
+end
+
 function Renderer.new(target)
     local self = setmetatable({}, Renderer)
 
@@ -172,7 +201,7 @@ function Renderer:drawBoard(game)
     self:resetColors()
 end
 
-function Renderer:drawPanel(game)
+function Renderer:drawLocalPanel(game)
     local x = self.panelX
     local turn = game:getTurn():upper()
 
@@ -210,12 +239,31 @@ function Renderer:drawPanel(game)
 
     self:write(x, 8, "Last: " .. last, colors.lightGray)
 
-    if self.networkInfo then
-        local info = self.networkInfo
+    if game.status ~= "playing" then
+        self:write(x, 12, "New Game button", colors.lightGray)
+    elseif not game.promotionPending then
+        self:write(x, 12, "Click piece -> move", colors.lightGray)
+    end
+end
+
+function Renderer:drawNetworkPanel(game)
+    local x = self.panelX
+    local info = self.networkInfo or {}
+    local tournament = type(info.tournament) == "table" and info.tournament or nil
+
+    if not tournament then
+        self:write(x, 3, "TURN: " .. game:getTurn():upper(), colors.cyan)
+        self:write(
+            x,
+            5,
+            game.inCheck and "CHECK" or "STATUS: PLAY",
+            game.inCheck and colors.red or colors.lime
+        )
         self:write(
             x,
             9,
-            "YOU: " .. tostring(info.localColor or "?"):upper(),
+            info.spectator and "VIEW: SPECTATOR" or
+                ("YOU: " .. tostring(info.localColor or "?"):upper()),
             colors.yellow
         )
         self:write(
@@ -224,22 +272,76 @@ function Renderer:drawPanel(game)
             "NET: " .. tostring(info.state or "?"):upper(),
             info.connected == false and colors.red or colors.lime
         )
-        self:write(
-            x,
-            11,
-            "MOVE: #" .. tostring(info.moveNo or 0),
-            colors.lightGray
-        )
+        self:write(x, 11, "MOVE: #" .. tostring(info.moveNo or 0), colors.lightGray)
+        return
     end
 
-    if game.status ~= "playing" then
-        self:write(x, 12, "New Game button", colors.lightGray)
-    elseif not game.promotionPending then
-        if self.networkInfo and game:getTurn() ~= self.networkInfo.localColor then
-            self:write(x, 12, "Waiting opponent", colors.orange)
+    local whiteClock = formatClock(tournament.whiteMs)
+    local blackClock = formatClock(tournament.blackMs)
+    local whiteName = shortName(tournament.whiteName, 9)
+    local blackName = shortName(tournament.blackName, 9)
+    local stateColor = info.connected == false and colors.red or colors.lime
+    local status = "PLAY"
+    local statusColor = colors.lime
+
+    if tournament.finished then
+        if tournament.result == "timeout" then
+            status = "TIMEOUT"
+            statusColor = colors.red
+        elseif tournament.result == "checkmate" then
+            status = "CHECKMATE"
+            statusColor = colors.red
         else
-            self:write(x, 12, "Click piece -> move", colors.lightGray)
+            status = tostring(tournament.result or "FINISHED"):upper()
+            statusColor = colors.yellow
         end
+    elseif game.inCheck then
+        status = "CHECK"
+        statusColor = colors.red
+    elseif game.status == "stalemate" then
+        status = "STALEMATE"
+        statusColor = colors.yellow
+    end
+
+    self:write(x, 3, "W " .. whiteClock, tournament.activeColor == Pieces.WHITE and colors.yellow or colors.white)
+    self:write(x, 4, "B " .. blackClock, tournament.activeColor == Pieces.BLACK and colors.yellow or colors.white)
+    self:write(x, 5, "W:" .. whiteName, colors.white)
+    self:write(x, 6, "B:" .. blackName, colors.lightGray)
+    self:write(
+        x,
+        7,
+        "S " .. scoreText(tournament.whiteScore) .. "-" .. scoreText(tournament.blackScore) ..
+            " G" .. tostring(tournament.gameNo or 1),
+        colors.cyan
+    )
+    self:write(
+        x,
+        8,
+        info.spectator and "VIEW: SPEC" or
+            ("YOU: " .. tostring(info.localColor or "?"):upper()),
+        colors.yellow
+    )
+    self:write(x, 9, "NET: " .. tostring(info.state or "?"):upper(), stateColor)
+    self:write(x, 10, "MOVE: #" .. tostring(info.moveNo or 0), colors.lightGray)
+    self:write(x, 11, status, statusColor)
+
+    if tournament.finished then
+        local winner = tournament.winner and tostring(tournament.winner):upper() or "DRAW"
+        self:write(x, 12, "RESULT: " .. winner, colors.yellow)
+    elseif info.spectator then
+        self:write(x, 12, "Read-only view", colors.lightGray)
+    elseif game:getTurn() ~= info.localColor then
+        self:write(x, 12, "Waiting opponent", colors.orange)
+    else
+        self:write(x, 12, "Your move", colors.lightGray)
+    end
+end
+
+function Renderer:drawPanel(game)
+    if self.networkInfo then
+        self:drawNetworkPanel(game)
+    else
+        self:drawLocalPanel(game)
     end
 end
 
@@ -259,14 +361,18 @@ function Renderer:drawFooter()
     local width, height = self.target.getSize()
     local footer
 
-    if self.networkInfo then
+    if self.networkInfo and self.networkInfo.spectator then
+        footer = "SPECTATOR  MOUSE controls  SHIFT back"
+    elseif self.networkInfo then
         footer = "MOUSE click  ARROWS cursor  ENTER select  CTRL new game  SHIFT back"
     else
         footer = "MOUSE click  ARROWS cursor  ENTER select  CTRL restart  SHIFT back"
     end
 
     if #footer > width then
-        footer = "MOUSE  ARROWS  ENTER  CTRL new  SHIFT back"
+        footer = self.networkInfo and self.networkInfo.spectator and
+            "SPECTATOR  SHIFT back" or
+            "MOUSE  ARROWS  ENTER  CTRL new  SHIFT back"
     end
 
     self.target.setBackgroundColor(colors.gray)
