@@ -1,1 +1,91 @@
-{"schema":1,"generatedFor":"0.21.0-alpha.2","sourceCommit":"b003a875afc1494e0e711ce1d9c9bfeaf57aadd2","hashAlgorithm":"git-blob-sha1","packages":[{"id":"base.core","name":"BASE Core","version":"0.21.0-alpha.2","type":"system","managedBy":"deploy","required":true},{"id":"base.apps","name":"BASE System Applications","version":"0.21.0-alpha.2","type":"system","managedBy":"deploy","required":true,"dependencies":["base.core"]},{"id":"game.breakout","name":"Breakout","version":"0.20.4.2","type":"game","managedBy":"package","legacyBundled":true,"entrypoint":"games/breakout.lua","installedSize":12280,"dependencies":["base.core"],"files":[{"source":"src/games/breakout.lua","target":"games/breakout.lua","size":6058,"hash":"b6962b047c56610997d68bc059433b669353f0ca"},{"source":"src/games/breakout/ball.lua","target":"games/breakout/ball.lua","size":688,"hash":"6fe91f138766ea73acf00aa9427464e50d5401e7"},{"source":"src/games/breakout/paddle.lua","target":"games/breakout/paddle.lua","size":746,"hash":"b974ca66035be5427c66a95b3fcff5757e554c67"},{"source":"src/games/breakout/bricks.lua","target":"games/breakout/bricks.lua","size":1769,"hash":"3715d3d722322a6cc20be35125a1298f1914b55f"},{"source":"src/games/breakout/renderer.lua","target":"games/breakout/renderer.lua","size":3019,"hash":"5dfa82b7552349a3060316c47b7a0a67bbd48b09"}]},{"id":"game.tetris","name":"Tetris","version":"0.20.4.2","type":"game","managedBy":"package","legacyBundled":true,"entrypoint":"games/tetris.lua","installedSize":21816,"dependencies":["base.core"],"files":[{"source":"src/games/tetris.lua","target":"games/tetris.lua","size":5044,"hash":"157fce420c75aebced2d20705c3a8bb7d0808731"},{"source":"src/games/tetris/board.lua","target":"games/tetris/board.lua","size":2209,"hash":"913aa0ed2527269b162c3b87cc6ae77906eb1643"},{"source":"src/games/tetris/game.lua","target":"games/tetris/game.lua","size":4468,"hash":"b746976f084365f6bf6c89494a455ffd0222413d"},{"source":"src/games/tetris/pieces.lua","target":"games/tetris/pieces.lua","size":2570,"hash":"5da9d4e11ab6f81a63314aeba6401da73f1577ff"},{"source":"src/games/tetris/renderer.lua","target":"games/tetris/renderer.lua","size":5553,"hash":"24ec5a205c648f93652e5f78dc85c8233188aa44"},{"source":"src/games/tetris/storage.lua","target":"games/tetris/storage.lua","size":1972,"hash":"bae7a54c302947ea21782e5f36a68c3746bf4bd8"}]},{"id":"game.chess","name":"Chess","version":"0.20.4.2","type":"game","managedBy":"package","legacyBundled":true,"entrypoint":"games/chess.lua","installedSize":165826,"dependencies":["base.core"],"files":[{"source":"src/games/chess.lua","target":"games/chess.lua","size":4172,"hash":"5b895c12cb22d4c2839a63bd84acf17a893c86c5"},{"source":"src/games/chess_local.lua","target":"games/chess_local.lua","size":6967,"hash":"82d153923034a64b03f48acd33e5c30e286d323e"},{"source":"src/games/chess_net.lua","target":"games/chess_net.lua","size":25862,"hash":"3d5d45515fede476427fa1e3829747882714e408"},{"source":"src/games/chess_tournament.lua","target":"games/chess_tournament.lua","size":31557,"hash":"6545f1eee5cf29b72b3fdd58a335cd2fdb617969"},{"source":"src/games/chess_spectator.lua","target":"games/chess_spectator.lua","size":12636,"hash":"d58a04f6c68fa542379195c0e96c60f4642b9c45"},{"source":"src/games/chess/board.lua","target":"games/chess/board.lua","size":1538,"hash":"13c72af7f7456e40ae7fd6ec3536e8f3c9a15b52"},{"source":"src/games/chess/pieces.lua","target":"games/chess/pieces.lua","size":1491,"hash":"24949c9fddc9670302ed016ddcd04acfe0931e5e"},{"source":"src/games/chess/move.lua","target":"games/chess/move.lua","size":1100,"hash":"18e558dedf0a256c2ced9a6bf66356b4c4cba801"},{"source":"src/games/chess/rules.lua","target":"games/chess/rules.lua","size":14068,"hash":"21e2340c7ca9c847b91d9de3a77f513e829b383f"},{"source":"src/games/chess/game.lua","target":"games/chess/game.lua","size":12717,"hash":"8eec2bc48f3b18f15df02fdb0edc8c1ede92d614"},{"source":"src/games/chess/renderer.lua","target":"games/chess/renderer.lua","size":12610,"hash":"3e4406f1cfdb6bff795d84b467123129db8cfa9c"},{"source":"src/games/chess/network.lua","target":"games/chess/network.lua","size":3592,"hash":"c984cbb16de06472740719845e7f210db0370487"},{"source":"src/games/chess/tournament.lua","target":"games/chess/tournament.lua","size":6242,"hash":"9e491d49ef2725d55a3e6de31f3955102c6c8f78"},{"source":"src/games/chess/displays.lua","target":"games/chess/displays.lua","size":6854,"hash":"1a7b636a84e0316ddff49febc0d0f86532af03e0"},{"source":"src/games/chess/display_menu.lua","target":"games/chess/display_menu.lua","size":8508,"hash":"0e87592a9726cf9db36563ee0e9bbfe4951a4fdf"},{"source":"src/games/chess/monitor_renderer.lua","target":"games/chess/monitor_renderer.lua","size":15912,"hash":"507ee72b0eb9d6db9ff9ae0f56a6ccbed5a4e2d9"}]}]}
+{
+  "schema": 1,
+  "generatedFor": "0.21.0-alpha.2",
+  "sourceCommit": "b003a875afc1494e0e711ce1d9c9bfeaf57aadd2",
+  "hashAlgorithm": "git-blob-sha1",
+  "packages": [
+    {
+      "id": "base.core",
+      "name": "BASE Core",
+      "version": "0.21.0-alpha.2",
+      "type": "system",
+      "managedBy": "deploy",
+      "required": true
+    },
+    {
+      "id": "base.apps",
+      "name": "BASE System Applications",
+      "version": "0.21.0-alpha.2",
+      "type": "system",
+      "managedBy": "deploy",
+      "required": true,
+      "dependencies": ["base.core"]
+    },
+    {
+      "id": "game.breakout",
+      "name": "Breakout",
+      "version": "0.20.4.2",
+      "type": "game",
+      "managedBy": "package",
+      "legacyBundled": true,
+      "entrypoint": "games/breakout.lua",
+      "installedSize": 12280,
+      "dependencies": ["base.core"],
+      "files": [
+        {"source":"src/games/breakout.lua","target":"games/breakout.lua","size":6058,"hash":"b6962b047c56610997d68bc059433b669353f0ca"},
+        {"source":"src/games/breakout/ball.lua","target":"games/breakout/ball.lua","size":688,"hash":"6fe91f138766ea73acf00aa9427464e50d5401e7"},
+        {"source":"src/games/breakout/paddle.lua","target":"games/breakout/paddle.lua","size":746,"hash":"b974ca66035be5427c66a95b3fcff5757e554c67"},
+        {"source":"src/games/breakout/bricks.lua","target":"games/breakout/bricks.lua","size":1769,"hash":"3715d3d722322a6cc20be35125a1298f1914b55f"},
+        {"source":"src/games/breakout/renderer.lua","target":"games/breakout/renderer.lua","size":3019,"hash":"5dfa82b7552349a3060316c47b7a0a67bbd48b09"}
+      ]
+    },
+    {
+      "id": "game.tetris",
+      "name": "Tetris",
+      "version": "0.20.4.2",
+      "type": "game",
+      "managedBy": "package",
+      "legacyBundled": true,
+      "entrypoint": "games/tetris.lua",
+      "installedSize": 21816,
+      "dependencies": ["base.core"],
+      "files": [
+        {"source":"src/games/tetris.lua","target":"games/tetris.lua","size":5044,"hash":"157fce420c75aebced2d20705c3a8bb7d0808731"},
+        {"source":"src/games/tetris/board.lua","target":"games/tetris/board.lua","size":2209,"hash":"913aa0ed2527269b162c3b87cc6ae77906eb1643"},
+        {"source":"src/games/tetris/game.lua","target":"games/tetris/game.lua","size":4468,"hash":"b746976f084365f6bf6c89494a455ffd0222413d"},
+        {"source":"src/games/tetris/pieces.lua","target":"games/tetris/pieces.lua","size":2570,"hash":"5da9d4e11ab6f81a63314aeba6401da73f1577ff"},
+        {"source":"src/games/tetris/renderer.lua","target":"games/tetris/renderer.lua","size":5553,"hash":"24ec5a205c648f93652e5f78dc85c8233188aa44"},
+        {"source":"src/games/tetris/storage.lua","target":"games/tetris/storage.lua","size":1972,"hash":"bae7a54c302947ea21782e5f36a68c3746bf4bd8"}
+      ]
+    },
+    {
+      "id": "game.chess",
+      "name": "Chess",
+      "version": "0.20.4.2",
+      "type": "game",
+      "managedBy": "package",
+      "legacyBundled": true,
+      "entrypoint": "games/chess.lua",
+      "installedSize": 165826,
+      "dependencies": ["base.core"],
+      "files": [
+        {"source":"src/games/chess.lua","target":"games/chess.lua","size":4172,"hash":"5b895c12cb22d4c2839a63bd84acf17a893c86c5"},
+        {"source":"src/games/chess_local.lua","target":"games/chess_local.lua","size":6967,"hash":"82d153923034a64b03f48acd33e5c30e286d323e"},
+        {"source":"src/games/chess_net.lua","target":"games/chess_net.lua","size":25862,"hash":"3d5d45515fede476427fa1e3829747882714e408"},
+        {"source":"src/games/chess_tournament.lua","target":"games/chess_tournament.lua","size":31557,"hash":"6545f1eee5cf29b72b3fdd58a335cd2fdb617969"},
+        {"source":"src/games/chess_spectator.lua","target":"games/chess_spectator.lua","size":12636,"hash":"d58a04f6c68fa542379195c0e96c60f4642b9c45"},
+        {"source":"src/games/chess/board.lua","target":"games/chess/board.lua","size":1538,"hash":"13c72af7f7456e40ae7fd6ec3536e8f3c9a15b52"},
+        {"source":"src/games/chess/pieces.lua","target":"games/chess/pieces.lua","size":1491,"hash":"24949c9fddc9670302ed016ddcd04acfe0931e5e"},
+        {"source":"src/games/chess/move.lua","target":"games/chess/move.lua","size":1100,"hash":"18e558dedf0a256c2ced9a6bf66356b4c4cba801"},
+        {"source":"src/games/chess/rules.lua","target":"games/chess/rules.lua","size":14068,"hash":"21e2340c7ca9c847b91d9de3a77f513e829b383f"},
+        {"source":"src/games/chess/game.lua","target":"games/chess/game.lua","size":12717,"hash":"8eec2bc48f3b18f15df02fdb0edc8c1ede92d614"},
+        {"source":"src/games/chess/renderer.lua","target":"games/chess/renderer.lua","size":12610,"hash":"3e4406f1cfdb6bff795d84b467123129db8cfa9c"},
+        {"source":"src/games/chess/network.lua","target":"games/chess/network.lua","size":3592,"hash":"c984cbb16de06472740719845e7f210db0370487"},
+        {"source":"src/games/chess/tournament.lua","target":"games/chess/tournament.lua","size":6242,"hash":"9e491d49ef2725d55a3e6de31f3955102c6c8f78"},
+        {"source":"src/games/chess/displays.lua","target":"games/chess/displays.lua","size":6854,"hash":"1a7b636a84e0316ddff49febc0d0f86532af03e0"},
+        {"source":"src/games/chess/display_menu.lua","target":"games/chess/display_menu.lua","size":8508,"hash":"0e87592a9726cf9db36563ee0e9bbfe4951a4fdf"},
+        {"source":"src/games/chess/monitor_renderer.lua","target":"games/chess/monitor_renderer.lua","size":15912,"hash":"507ee72b0eb9d6db9ff9ae0f56a6ccbed5a4e2d9"}
+      ]
+    }
+  ]
+}
