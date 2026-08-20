@@ -1,13 +1,13 @@
 {
   "schema": 2,
-  "version": "0.22.0-alpha.2",
-  "sourceCommit": "95a41c7fb1de3a89311e9e6f3997780f734a7309",
+  "version": "0.22.0-alpha.3",
+  "sourceCommit": "3056b5e668bc52311ab513046a0ae22e9babced8",
   "hashAlgorithm": "git-blob-sha1",
   "files": [
     {"source":"deploy.json","target":"deploy.json","control":"manifest"},
-    {"source":"packages.json","target":"packages.json","size":7062,"hash":"f310f395a1d669d3c1abeacc1474768e06af7ebd"},
+    {"source":"packages.json","target":"packages.json","size":5523,"hash":"90c0139b24d5328236d6f055e374db105d8fefaf"},
     {"source":"src/startup.lua","target":"startup.lua","size":1054,"hash":"7e6758a09ddcd4ea2954785cc0b8a4ad3c71d8f9","bootstrapProtected":true},
-    {"source":"src/main.lua","target":"main.lua","size":12371,"hash":"9de80d90799b06ebfc56a7d1db66c0dbfa7271ec"},
+    {"source":"src/main.lua","target":"main.lua","size":12097,"hash":"dee4cb0fb98f64e44511f7c6a3f7503586749c99"},
     {"source":"src/update.lua","target":"update.lua","size":2571,"hash":"7c4312052b866deab5bec02d18923e11283e32de","bootstrapProtected":true},
     {"source":"src/pkg.lua","target":"pkg.lua","size":13034,"hash":"0e50c33ccca9225ff28ae1abe36e79ef50b201de"},
     {"source":"src/lib/ui.lua","target":"lib/ui.lua","size":1745,"hash":"5332a0dbdfc287e64ddc52b0a4322c1a7660dad3"},
@@ -17,6 +17,7 @@
     {"source":"src/lib/system/updater_core.lua","target":"lib/system/updater_core.lua","size":32254,"hash":"218011620bfd27abc1c7b3d1805451e97b20b0d2"},
     {"source":"src/lib/system/service_supervisor.lua","target":"lib/system/service_supervisor.lua","size":20114,"hash":"d6dde08c3d48b84b927e0b55d22a6fd3163acecc"},
     {"source":"src/lib/system/status_ui.lua","target":"lib/system/status_ui.lua","size":11701,"hash":"850322ea56ea3e94c3184da2bdb77f04f6580fa7"},
+    {"source":"src/lib/system/storage_manager.lua","target":"lib/system/storage_manager.lua","size":14413,"hash":"dc3c07d7b07dd207826ca28dfd96c258d748378a"},
     {"source":"src/lib/package/hash.lua","target":"lib/package/hash.lua","size":3659,"hash":"b2b7632675b861562a545273a21f258b4cd42b2d"},
     {"source":"src/lib/package/journal.lua","target":"lib/package/journal.lua","size":8005,"hash":"c32c2a58f1076e97ef26da2c983f4e50673d669d"},
     {"source":"src/lib/package/manager.lua","target":"lib/package/manager.lua","size":36553,"hash":"b43566118dad45327449e0ce40e8cf93c09de571"},
@@ -54,7 +55,8 @@
     {"source":"src/apps/routing.lua","target":"apps/routing.lua","size":10446,"hash":"9ca28d9693669d74560b0d9b5ed11ac2e6645557"},
     {"source":"src/apps/firewall.lua","target":"apps/firewall.lua","size":13212,"hash":"aecbfee26886171385457fa2b1f6afd50daeaf4f"},
     {"source":"src/apps/security.lua","target":"apps/security.lua","size":10012,"hash":"a99f810d25813b6bf93c2511aca365ac508f0c1d"},
-    {"source":"src/apps/sandbox_probe.lua","target":"apps/sandbox_probe.lua","size":2012,"hash":"34c1fe717f207eebf699383f417a1fd1638aa152"}
+    {"source":"src/apps/sandbox_probe.lua","target":"apps/sandbox_probe.lua","size":2012,"hash":"34c1fe717f207eebf699383f417a1fd1638aa152"},
+    {"source":"src/apps/explorer.lua","target":"apps/explorer.lua","size":14151,"hash":"f5c5ff10d4ed12d258378dd846ded7e9c59472d0"}
   ],
   "remove": []
 }
