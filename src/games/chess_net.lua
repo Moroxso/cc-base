@@ -2,6 +2,8 @@ local Game = require("chess.game")
 local Renderer = require("chess.renderer")
 local Pieces = require("chess.pieces")
 local ChessNet = require("chess.network")
+local Displays = require("chess.displays")
+local DisplayMenu = require("chess.display_menu")
 local Address = require("lib.net.address")
 local CCTP = require("lib.net.cctp")
 local Button = require("lib.gui.button")
@@ -18,6 +20,8 @@ end
 
 local game = Game.new()
 local renderer = Renderer.new(term)
+local displays = Displays.new()
+local displayMenu = DisplayMenu.new(term, displays)
 renderer:setTitle("CHESS NETWORK")
 
 local running = true
@@ -87,6 +91,17 @@ local restartButton = Button.new({
     width = 15,
     height = 1,
     backgroundColor = colors.blue,
+    textColor = colors.white
+})
+
+local displayButton = Button.new({
+    id = "displays",
+    label = "Displays",
+    x = 36,
+    y = 15,
+    width = 15,
+    height = 1,
+    backgroundColor = colors.purple,
     textColor = colors.white
 })
 
@@ -203,6 +218,15 @@ local function syncPromotionSelection()
     end
 end
 
+local function renderMonitors()
+    displays:render(game, {
+        mode = "NETWORK",
+        title = "CHESS TOURNAMENT",
+        moveNo = moveNo,
+        networkState = phase == "playing" and "ONLINE" or "DISCONNECTED"
+    })
+end
+
 local function drawGame()
     syncPromotionSelection()
     renderer:setFlipped(localColor == Pieces.BLACK)
@@ -213,6 +237,7 @@ local function drawGame()
         moveNo = moveNo
     })
     renderer:draw(game, controls)
+    displayButton:draw(term)
 
     if message ~= "" then
         line(17, message, colors.gray, 36, 15)
@@ -220,12 +245,20 @@ local function drawGame()
 end
 
 local function redraw()
-    if phase == "menu" then
+    if displayMenu:isOpen() then
+        displayMenu:draw()
+    elseif phase == "menu" then
         drawMenu()
     elseif phase == "playing" or phase == "disconnected" then
         drawGame()
     else
         drawWaiting()
+    end
+
+    if phase == "playing" or phase == "disconnected" then
+        renderMonitors()
+    else
+        displays:clearOutputs()
     end
 end
 
@@ -245,6 +278,7 @@ local function stopListening()
 end
 
 local function resetSession()
+    displayMenu:close()
     closeConnection()
     stopListening()
     role = nil
@@ -259,6 +293,7 @@ local function resetSession()
     renderer:setFlipped(false)
     phase = "menu"
     message = "Choose HOST or JOIN."
+    displays:clearOutputs()
 end
 
 local function sendMessage(messageType, payload)
@@ -555,6 +590,11 @@ local function handleGameMouse(buttonValue, x, y)
         return false
     end
 
+    if displayButton:contains(x, y) then
+        displayMenu:open()
+        return true
+    end
+
     if backButton:contains(x, y) then
         resetSession()
         return true
@@ -727,125 +767,142 @@ redraw()
 while running do
     local event, a, b, c, d, e, f = os.pullEvent()
     local redrawNeeded = false
+    local uiConsumed = false
 
-    if event == "mouse_click" and (a == 1 or a == 0) then
-        if phase == "menu" then
-            if idMinusButton:contains(b, c) then
-                targetId = math.max(0, targetId - 1)
-                redrawNeeded = true
-            elseif idPlusButton:contains(b, c) then
-                targetId = targetId + 1
-                redrawNeeded = true
-            elseif hostButton:contains(b, c) then
-                beginHost()
-                redrawNeeded = true
-            elseif joinButton:contains(b, c) then
-                beginJoin()
-                redrawNeeded = true
-            elseif menuBackButton:contains(b, c) then
-                running = false
-            end
-        elseif phase == "playing" or phase == "disconnected" then
-            redrawNeeded = handleGameMouse(a, b, c)
-        elseif waitBackButton:contains(b, c) then
-            resetSession()
-            redrawNeeded = true
-        end
+    if displayMenu:isOpen() and
+        (event == "mouse_click" or event == "key" or
+         event == "peripheral" or event == "peripheral_detach")
+    then
+        local changed = displayMenu:handleEvent(event, a, b, c)
+        redrawNeeded = changed == true
+        uiConsumed = true
+    end
 
-    elseif event == "key" then
-        if phase == "menu" then
-            if a == keys.leftShift then
-                running = false
-            elseif a == keys.left then
-                targetId = math.max(0, targetId - 1)
-                redrawNeeded = true
-            elseif a == keys.right then
-                targetId = targetId + 1
-                redrawNeeded = true
-            elseif a == keys.up then
-                menuIndex = menuIndex - 1
-                if menuIndex < 1 then menuIndex = #menuActions end
-                redrawNeeded = true
-            elseif a == keys.down then
-                menuIndex = menuIndex + 1
-                if menuIndex > #menuActions then menuIndex = 1 end
-                redrawNeeded = true
-            elseif a == keys.enter then
-                local action = menuActions[menuIndex]
-                if action == "host" then beginHost()
-                elseif action == "join" then beginJoin()
-                else running = false end
+    if not uiConsumed then
+        if event == "mouse_click" and (a == 1 or a == 0) then
+            if phase == "menu" then
+                if idMinusButton:contains(b, c) then
+                    targetId = math.max(0, targetId - 1)
+                    redrawNeeded = true
+                elseif idPlusButton:contains(b, c) then
+                    targetId = targetId + 1
+                    redrawNeeded = true
+                elseif hostButton:contains(b, c) then
+                    beginHost()
+                    redrawNeeded = true
+                elseif joinButton:contains(b, c) then
+                    beginJoin()
+                    redrawNeeded = true
+                elseif menuBackButton:contains(b, c) then
+                    running = false
+                end
+            elseif phase == "playing" or phase == "disconnected" then
+                redrawNeeded = handleGameMouse(a, b, c)
+            elseif waitBackButton:contains(b, c) then
+                resetSession()
                 redrawNeeded = true
             end
-        elseif phase == "playing" or phase == "disconnected" then
-            redrawNeeded = handleGameKey(a)
-        elseif a == keys.leftShift then
-            resetSession()
+
+        elseif event == "key" then
+            if phase == "menu" then
+                if a == keys.leftShift then
+                    running = false
+                elseif a == keys.left then
+                    targetId = math.max(0, targetId - 1)
+                    redrawNeeded = true
+                elseif a == keys.right then
+                    targetId = targetId + 1
+                    redrawNeeded = true
+                elseif a == keys.up then
+                    menuIndex = menuIndex - 1
+                    if menuIndex < 1 then menuIndex = #menuActions end
+                    redrawNeeded = true
+                elseif a == keys.down then
+                    menuIndex = menuIndex + 1
+                    if menuIndex > #menuActions then menuIndex = 1 end
+                    redrawNeeded = true
+                elseif a == keys.enter then
+                    local action = menuActions[menuIndex]
+                    if action == "host" then beginHost()
+                    elseif action == "join" then beginJoin()
+                    else running = false end
+                    redrawNeeded = true
+                end
+            elseif phase == "playing" or phase == "disconnected" then
+                redrawNeeded = handleGameKey(a)
+            elseif a == keys.leftShift then
+                resetSession()
+                redrawNeeded = true
+            end
+
+        elseif event == "ccbase_cctp_listen_result" and listenRequestId and a == listenRequestId then
+            if b == true then
+                listening = true
+                phase = "hosting"
+                message = "Hosting on " .. tostring(Address.localAddress()) .. ":" .. tostring(ChessNet.PORT) .. "."
+            else
+                phase = "menu"
+                listenRequestId = nil
+                message = "Listen failed: " .. tostring(c)
+            end
             redrawNeeded = true
-        end
 
-    elseif event == "ccbase_cctp_listen_result" and listenRequestId and a == listenRequestId then
-        if b == true then
-            listening = true
-            phase = "hosting"
-            message = "Hosting on " .. tostring(Address.localAddress()) .. ":" .. tostring(ChessNet.PORT) .. "."
-        else
-            phase = "menu"
-            listenRequestId = nil
-            message = "Listen failed: " .. tostring(c)
-        end
-        redrawNeeded = true
-
-    elseif event == "ccbase_cctp_accept" and role == "host" and a == ChessNet.LISTENER_ID then
-        if connectionId then
-            CCTP.close(b)
-        else
-            connectionId = b
-            remoteAddress = c
-            phase = "handshake"
-            sendMessage(ChessNet.TYPE_HELLO, {
-                hostId = os.getComputerID(),
-                hostColor = Pieces.WHITE,
-                guestColor = Pieces.BLACK,
-                protocol = ChessNet.VERSION
-            })
-            message = "Peer connected; waiting READY..."
-        end
-        redrawNeeded = true
-
-    elseif event == "ccbase_cctp_connect_result" and connectRequestId and a == connectRequestId then
-        if b == true then
-            connectionId = c
-            remoteAddress = d or remoteAddress
-            phase = "handshake"
-            message = "CCTP connected; waiting host HELLO..."
-        else
-            phase = "menu"
-            connectRequestId = nil
-            message = "Connect failed: " .. tostring(c)
-        end
-        redrawNeeded = true
-
-    elseif event == "ccbase_cctp_receive" then
-        redrawNeeded = handleNetworkMessage(a, b, c) or redrawNeeded
-
-    elseif event == "ccbase_cctp_closed" and a == connectionId then
-        connectionId = nil
-        phase = "disconnected"
-        message = "Connection closed: " .. tostring(b) .. ". SHIFT = back."
-        redrawNeeded = true
-
-    elseif event == "ccbase_cctp_send_result" and b == false and d == connectionId then
-        message = "CCTP send failed: " .. tostring(c)
-        redrawNeeded = true
-
-    elseif event == "term_resize" then
-        local newWidth, newHeight = term.getSize()
-
-        if newWidth < 51 or newHeight < 19 then
-            running = false
-        else
+        elseif event == "ccbase_cctp_accept" and role == "host" and a == ChessNet.LISTENER_ID then
+            if connectionId then
+                CCTP.close(b)
+            else
+                connectionId = b
+                remoteAddress = c
+                phase = "handshake"
+                sendMessage(ChessNet.TYPE_HELLO, {
+                    hostId = os.getComputerID(),
+                    hostColor = Pieces.WHITE,
+                    guestColor = Pieces.BLACK,
+                    protocol = ChessNet.VERSION
+                })
+                message = "Peer connected; waiting READY..."
+            end
             redrawNeeded = true
+
+        elseif event == "ccbase_cctp_connect_result" and connectRequestId and a == connectRequestId then
+            if b == true then
+                connectionId = c
+                remoteAddress = d or remoteAddress
+                phase = "handshake"
+                message = "CCTP connected; waiting host HELLO..."
+            else
+                phase = "menu"
+                connectRequestId = nil
+                message = "Connect failed: " .. tostring(c)
+            end
+            redrawNeeded = true
+
+        elseif event == "ccbase_cctp_receive" then
+            redrawNeeded = handleNetworkMessage(a, b, c) or redrawNeeded
+
+        elseif event == "ccbase_cctp_closed" and a == connectionId then
+            connectionId = nil
+            phase = "disconnected"
+            message = "Connection closed: " .. tostring(b) .. ". SHIFT = back."
+            redrawNeeded = true
+
+        elseif event == "ccbase_cctp_send_result" and b == false and d == connectionId then
+            message = "CCTP send failed: " .. tostring(c)
+            redrawNeeded = true
+
+        elseif event == "peripheral" or event == "peripheral_detach" then
+            displays:refresh()
+            redrawNeeded = true
+
+        elseif event == "term_resize" then
+            local newWidth, newHeight = term.getSize()
+
+            if newWidth < 51 or newHeight < 19 then
+                running = false
+            else
+                width, height = newWidth, newHeight
+                redrawNeeded = true
+            end
         end
     end
 
@@ -856,6 +913,7 @@ end
 
 closeConnection()
 stopListening()
+displays:clearOutputs()
 resetColors()
 term.clear()
 term.setCursorPos(1, 1)
