@@ -1,6 +1,6 @@
 local Sandbox = {}
 
-Sandbox.VERSION = 1
+Sandbox.VERSION = 2
 Sandbox.DATA_ROOT = "/data/sandbox"
 Sandbox.LOG_PATH = "/data/security/sandbox_log.json"
 Sandbox.MAX_LOG_ENTRIES = 64
@@ -77,6 +77,41 @@ local function writeJson(path, value)
     return true
 end
 
+local function copyLibrary(source)
+    if type(source) ~= "table" then
+        return source
+    end
+
+    local result = {}
+
+    for key, value in pairs(source) do
+        result[key] = value
+    end
+
+    return result
+end
+
+local function safeGetMetatable(value)
+    if type(value) ~= "table" then
+        return nil
+    end
+
+    local meta = getmetatable(value)
+    return type(meta) == "table" and meta or nil
+end
+
+local function safeSetMetatable(value, meta)
+    if type(value) ~= "table" then
+        error("sandbox metatable target must be a table", 2)
+    end
+
+    if meta ~= nil and type(meta) ~= "table" then
+        error("sandbox metatable must be a table or nil", 2)
+    end
+
+    return setmetatable(value, meta)
+end
+
 function Sandbox.storageRoot(id)
     id = sanitizeId(id)
     return Sandbox.DATA_ROOT .. "/" .. id
@@ -102,7 +137,7 @@ local function virtualPath(path)
 
     for part in path:gmatch("[^/]+") do
         if part == "." or part == "" then
-            -- Ignore.
+            -- Ignore harmless path components.
         elseif part == ".." then
             return nil, "sandbox_parent_traversal_denied"
         else
@@ -264,12 +299,24 @@ local function createFs(root)
     function safeFs.move(fromPath, toPath)
         local fromHost = map(fromPath)
         local toHost = map(toPath)
+        local parent = fs.getDir(toHost)
+
+        if parent ~= "" then
+            ensureDir(parent)
+        end
+
         fs.move(fromHost, toHost)
     end
 
     function safeFs.copy(fromPath, toPath)
         local fromHost = map(fromPath)
         local toHost = map(toPath)
+        local parent = fs.getDir(toHost)
+
+        if parent ~= "" then
+            ensureDir(parent)
+        end
+
         fs.copy(fromHost, toHost)
     end
 
@@ -310,6 +357,16 @@ local function createFs(root)
     function safeFs.open(path, mode)
         mode = mode or "r"
         local host = map(path)
+        local first = mode:sub(1, 1)
+
+        if first == "w" or first == "a" then
+            local parent = fs.getDir(host)
+
+            if parent ~= "" then
+                ensureDir(parent)
+            end
+        end
+
         return fs.open(host, mode)
     end
 
@@ -348,8 +405,13 @@ local function createOs()
     end
 
     function safeOs.cancelTimer(id)
+        if timers[id] ~= true then
+            return false
+        end
+
         timers[id] = nil
-        return os.cancelTimer(id)
+        os.cancelTimer(id)
+        return true
     end
 
     local function pull(filter, raw)
@@ -369,6 +431,10 @@ local function createOs()
 
             if name == "timer" then
                 allowed = timers[event[2]] == true
+
+                if allowed then
+                    timers[event[2]] = nil
+                end
             end
 
             if allowed and (filter == nil or filter == name) then
@@ -416,9 +482,11 @@ local function createTerm()
     }
 
     for _, name in ipairs(names) do
-        if type(term[name]) == "function" then
+        local hostFunction = term[name]
+
+        if type(hostFunction) == "function" then
             safeTerm[name] = function(...)
-                return term[name](...)
+                return hostFunction(...)
             end
         end
     end
@@ -478,8 +546,8 @@ function Sandbox.makeEnvironment(programPath, options)
         rawlen = rawlen,
         rawset = rawset,
         select = select,
-        setmetatable = setmetatable,
-        getmetatable = getmetatable,
+        setmetatable = safeSetMetatable,
+        getmetatable = safeGetMetatable,
         tonumber = tonumber,
         tostring = tostring,
         type = type,
@@ -487,14 +555,14 @@ function Sandbox.makeEnvironment(programPath, options)
         print = print,
         write = write,
         read = read,
-        string = string,
-        table = table,
-        math = math,
-        bit32 = bit32,
-        colors = colors,
-        colours = colours,
-        keys = keys,
-        utf8 = utf8,
+        string = copyLibrary(string),
+        table = copyLibrary(table),
+        math = copyLibrary(math),
+        bit32 = copyLibrary(bit32),
+        colors = copyLibrary(colors),
+        colours = copyLibrary(colours),
+        keys = copyLibrary(keys),
+        utf8 = copyLibrary(utf8),
         fs = createFs(root),
         os = safeOs,
         term = createTerm(),
@@ -508,8 +576,10 @@ function Sandbox.makeEnvironment(programPath, options)
             shell = false,
             peripherals = false,
             require = false,
+            dynamicLoad = false,
             systemControl = false,
-            hostFilesystem = false
+            hostFilesystem = false,
+            hostGlobals = false
         }
     }
 
@@ -518,6 +588,8 @@ function Sandbox.makeEnvironment(programPath, options)
     end
 
     env._G = env
+    env._ENV = env
+
     return env, id, root
 end
 
