@@ -112,13 +112,19 @@ local function confirmAction(text)
     while true do
         local event, value = os.pullEvent()
         if event == "char" then
-            value = string.lower(value)
+            value = string.lower(tostring(value or ""))
             if value == "y" then return true end
             if value == "n" then return false end
-        elseif event == "key"
-            and (value == keys.escape or value == keys.left or value == keys.leftShift)
-        then
-            return false
+        elseif event == "key" then
+            if value == keys.y then return true end
+            if value == keys.n
+                or value == keys.enter
+                or value == keys.escape
+                or value == keys.left
+                or value == keys.leftShift
+            then
+                return false
+            end
         end
     end
 end
@@ -183,7 +189,7 @@ local function showServices(options)
             ui.centerText(term, 8, "No service data.", colors.orange)
         else
             for index, item in ipairs(snapshot) do
-                if index > 6 then break end
+                if index > 7 then break end
                 local y = 5 + index
                 local isSelected = index == selected
                 term.setBackgroundColor(isSelected and colors.lightBlue or colors.black)
@@ -244,7 +250,7 @@ local function showServices(options)
                     end
                 end
             end
-        elseif event == "mouse_click" and a == 1 and b >= 3 and b <= width - 1 and c >= 6 and c <= 11 then
+        elseif event == "mouse_click" and a == 1 and b >= 3 and b <= width - 1 and c >= 6 and c <= 12 then
             local index = c - 5
             if snapshot[index] then selected = index end
         end
