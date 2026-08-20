@@ -1,5 +1,5 @@
 {
-  "version": "0.20.3",
+  "version": "0.20.4",
   "files": [
     {"source":"deploy.json","target":"deploy.json"},
     {"source":"src/startup.lua","target":"startup.lua"},
@@ -54,6 +54,8 @@
     {"source":"src/games/chess.lua","target":"games/chess.lua"},
     {"source":"src/games/chess_local.lua","target":"games/chess_local.lua"},
     {"source":"src/games/chess_net.lua","target":"games/chess_net.lua"},
+    {"source":"src/games/chess_tournament.lua","target":"games/chess_tournament.lua"},
+    {"source":"src/games/chess_spectator.lua","target":"games/chess_spectator.lua"},
     {"source":"src/games/chess/board.lua","target":"games/chess/board.lua"},
     {"source":"src/games/chess/pieces.lua","target":"games/chess/pieces.lua"},
     {"source":"src/games/chess/move.lua","target":"games/chess/move.lua"},
@@ -61,6 +63,7 @@
     {"source":"src/games/chess/game.lua","target":"games/chess/game.lua"},
     {"source":"src/games/chess/renderer.lua","target":"games/chess/renderer.lua"},
     {"source":"src/games/chess/network.lua","target":"games/chess/network.lua"},
+    {"source":"src/games/chess/tournament.lua","target":"games/chess/tournament.lua"},
     {"source":"src/games/chess/displays.lua","target":"games/chess/displays.lua"},
     {"source":"src/games/chess/display_menu.lua","target":"games/chess/display_menu.lua"},
     {"source":"src/games/chess/monitor_renderer.lua","target":"games/chess/monitor_renderer.lua"}
