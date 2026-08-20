@@ -35,6 +35,7 @@ add(
     "virtual /startup.lua"
 )
 
+fs.makeDir("/data")
 local dataFile = fs.open("/data/automation.json", "w")
 local dataVirtual = dataFile ~= nil
 
