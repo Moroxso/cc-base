@@ -40,6 +40,12 @@ local function printStatus()
         return fail(existedOrError)
     end
 
+    local installed, installedError = manager:listInstalled()
+
+    if not installed then
+        return fail(installedError)
+    end
+
     local storage = manager:storageStatus("/")
 
     print("BASE PACKAGE MANAGER")
@@ -47,7 +53,7 @@ local function printStatus()
     print("Catalog release: " .. tostring(catalog.generatedFor))
     print("Packages: " .. tostring(#catalog.packages))
     print("Registry: " .. (manager.registryExisted and "present" or "not created"))
-    print("Installed entries: " .. tostring(#manager:listInstalled()))
+    print("Installed entries: " .. tostring(#installed))
     print("")
     print("Storage")
     print("Drive: " .. tostring(storage.drive or "unknown"))
