@@ -1,13 +1,13 @@
 {
   "schema": 1,
-  "generatedFor": "0.22.0-alpha.4.2",
+  "generatedFor": "0.23.0-alpha.1",
   "sourceCommit": "b003a875afc1494e0e711ce1d9c9bfeaf57aadd2",
   "hashAlgorithm": "git-blob-sha1",
   "packages": [
     {
       "id": "base.core",
       "name": "BASE Core",
-      "version": "0.22.0-alpha.4.2",
+      "version": "0.23.0-alpha.1",
       "type": "system",
       "managedBy": "deploy",
       "required": true
@@ -15,7 +15,7 @@
     {
       "id": "base.apps",
       "name": "BASE System Applications",
-      "version": "0.22.0-alpha.4.2",
+      "version": "0.23.0-alpha.1",
       "type": "system",
       "managedBy": "deploy",
       "required": true,
