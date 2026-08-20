@@ -19,7 +19,7 @@
     {"source":"src/lib/package/journal.lua","target":"lib/package/journal.lua","size":7108,"hash":"767dae96baa1b39590b1d282f521de9500394e0c"},
     {"source":"src/lib/package/manager.lua","target":"lib/package/manager.lua","size":36553,"hash":"b43566118dad45327449e0ce40e8cf93c09de571"},
     {"source":"src/lib/package/manifest.lua","target":"lib/package/manifest.lua","size":7230,"hash":"ad06d900faeb8753bef71e9ec31c52985f0a291e"},
-    {"source":"src/lib/package/registry.lua","target":"lib/package/registry.lua","size":8300,"hash":"225525ae80dd36b3df448f34bfccfd1f465f63d7"},
+    {"source":"src/lib/package/registry.lua","target":"lib/package/registry.lua","size":8300,"hash":"225525ae80dd36b3df1d53dff1ea82a6cf825167"},
     {"source":"src/lib/package/storage.lua","target":"lib/package/storage.lua","size":4382,"hash":"04fd471a27eb4de7e159911b27d1943915215d39"},
     {"source":"src/lib/gui/button.lua","target":"lib/gui/button.lua","size":2492,"hash":"68dfcf496e5887b048bd41d304bf5dc391bc1750"},
     {"source":"src/lib/gui/screen.lua","target":"lib/gui/screen.lua","size":3434,"hash":"80d07c0255ffead5afffa4dcb1dc1628a65fd143"},
