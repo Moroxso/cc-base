@@ -1,7 +1,9 @@
 local Integrity = {}
 
-Integrity.VERSION = 1
+Integrity.VERSION = 2
 Integrity.MANIFEST_PATH = "/deploy.json"
+Integrity.PACKAGE_CATALOG_PATH = "/packages.json"
+Integrity.PACKAGE_REGISTRY_PATH = "/data/system/packages.json"
 Integrity.VERSION_PATH = "/.project-version"
 Integrity.BASELINE_PATH = "/data/security/integrity.json"
 Integrity.STATUS_PATH = "/data/security/status.json"
@@ -14,9 +16,10 @@ local PROTECTED_ROOTS = {
     "/main.lua",
     "/update.lua",
     "/deploy.json",
+    "/packages.json",
+    "/pkg.lua",
     "/lib",
-    "/apps",
-    "/games"
+    "/apps"
 }
 
 local function canonicalPath(path)
@@ -177,6 +180,60 @@ local function currentVersion()
     return value and value ~= "" and value or "unknown"
 end
 
+local function addBaselineFile(files, seen, path)
+    path = canonicalPath(path)
+
+    if seen[path] then
+        return
+    end
+
+    local hash, size = Integrity.hashFile(path)
+
+    if hash then
+        table.insert(files, {
+            path = path,
+            hash = hash,
+            size = size
+        })
+        seen[path] = true
+    end
+end
+
+local function appendInstalledPackageFiles(files, seen)
+    local catalog = readJson(Integrity.PACKAGE_CATALOG_PATH)
+    local registry = readJson(Integrity.PACKAGE_REGISTRY_PATH)
+
+    if type(catalog) ~= "table"
+        or type(catalog.packages) ~= "table"
+        or type(registry) ~= "table"
+        or type(registry.installed) ~= "table"
+    then
+        return
+    end
+
+    local byId = {}
+
+    for _, packageItem in ipairs(catalog.packages) do
+        if type(packageItem) == "table" and type(packageItem.id) == "string" then
+            byId[packageItem.id] = packageItem
+        end
+    end
+
+    for id in pairs(registry.installed) do
+        local packageItem = byId[id]
+
+        if packageItem and packageItem.managedBy == "package" then
+            for _, file in ipairs(packageItem.files or {}) do
+                local path = normalizeTarget(file.target)
+
+                if path then
+                    addBaselineFile(files, seen, path)
+                end
+            end
+        end
+    end
+end
+
 local function buildBaselineFromManifest(manifest)
     local files = {}
     local seen = {}
@@ -184,30 +241,15 @@ local function buildBaselineFromManifest(manifest)
     for _, item in ipairs(manifest.files or {}) do
         local path = normalizeTarget(item.target)
 
-        if path and not seen[path] then
-            local hash, size = Integrity.hashFile(path)
-
-            if hash then
-                table.insert(files, {
-                    path = path,
-                    hash = hash,
-                    size = size
-                })
-                seen[path] = true
-            end
+        if path then
+            addBaselineFile(files, seen, path)
         end
     end
 
-    if fs.exists(Integrity.VERSION_PATH) and not seen[Integrity.VERSION_PATH] then
-        local hash, size = Integrity.hashFile(Integrity.VERSION_PATH)
+    appendInstalledPackageFiles(files, seen)
 
-        if hash then
-            table.insert(files, {
-                path = Integrity.VERSION_PATH,
-                hash = hash,
-                size = size
-            })
-        end
+    if fs.exists(Integrity.VERSION_PATH) and not seen[Integrity.VERSION_PATH] then
+        addBaselineFile(files, seen, Integrity.VERSION_PATH)
     end
 
     table.sort(files, function(a, b)
@@ -219,6 +261,7 @@ local function buildBaselineFromManifest(manifest)
         projectVersion = tostring(manifest.version or currentVersion()),
         createdAt = nowMs(),
         algorithm = "djb2-32",
+        packageAware = true,
         files = files
     }
 end
