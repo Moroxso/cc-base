@@ -253,7 +253,12 @@ local requiredGrowth = math.max(0, totalDelta)
 local available = freeSpace()
 
 print("")
-print("Changed: " .. tostring(#changes)) .. "/" .. tostring(#manifest.files))
+print(
+    "Changed: "
+    .. tostring(#changes))
+    .. "/"
+    .. tostring(#manifest.files)
+)
 print("Unchanged: " .. tostring(unchanged))
 print("Net growth: " .. formatBytes(requiredGrowth))
 print("Free now: " .. formatBytes(available))
