@@ -25,6 +25,13 @@ local function validId(value)
         and value:match("^[a-z0-9][a-z0-9%._%-]*$") ~= nil
 end
 
+local function validRelativePath(value)
+    return type(value) == "string"
+        and value ~= ""
+        and value:sub(1, 1) ~= "/"
+        and not value:find("..", 1, true)
+end
+
 local function readJson(path)
     if not fs.exists(path) or fs.isDir(path) then
         return nil
@@ -46,6 +53,22 @@ local function readJson(path)
     end
 
     return value
+end
+
+local function normalizeFiles(files)
+    local result = {}
+
+    for _, item in ipairs(files or {}) do
+        if type(item) == "table" and validRelativePath(item.target) then
+            result[#result + 1] = {
+                target = item.target,
+                size = tonumber(item.size),
+                hash = type(item.hash) == "string" and item.hash or nil
+            }
+        end
+    end
+
+    return result
 end
 
 function Registry.default()
@@ -76,6 +99,34 @@ function Registry.validate(value)
 
         if type(item.version) ~= "string" or item.version == "" then
             return false, "package_registry_version_invalid:" .. tostring(id)
+        end
+
+        if item.sourceCommit ~= nil and type(item.sourceCommit) ~= "string" then
+            return false, "package_registry_source_commit_invalid:" .. tostring(id)
+        end
+
+        if item.files ~= nil then
+            if type(item.files) ~= "table" then
+                return false, "package_registry_files_invalid:" .. tostring(id)
+            end
+
+            for index, file in ipairs(item.files) do
+                if type(file) ~= "table" or not validRelativePath(file.target) then
+                    return false,
+                        "package_registry_file_invalid:"
+                        .. tostring(id)
+                        .. ":"
+                        .. tostring(index)
+                end
+
+                if file.size ~= nil and (type(file.size) ~= "number" or file.size < 0) then
+                    return false, "package_registry_file_size_invalid:" .. tostring(id)
+                end
+
+                if file.hash ~= nil and (type(file.hash) ~= "string" or file.hash == "") then
+                    return false, "package_registry_file_hash_invalid:" .. tostring(id)
+                end
+            end
         end
     end
 
@@ -220,6 +271,14 @@ function Registry.setInstalled(registry, id, info)
         source = tostring(info.source or "unknown"),
         managedBy = tostring(info.managedBy or "package"),
         mount = tostring(info.mount or "unknown"),
+        sourceCommit = info.sourceCommit
+            or (previous and previous.sourceCommit)
+            or nil,
+        files = normalizeFiles(
+            info.files
+            or (previous and previous.files)
+            or {}
+        ),
         installedAt = installedAt,
         updatedAt = nowMs()
     }
@@ -236,6 +295,22 @@ function Registry.removeInstalled(registry, id)
     return true
 end
 
+function Registry.expectedFile(registry, id, target)
+    local item = Registry.get(registry, id)
+
+    if not item then
+        return nil
+    end
+
+    for _, file in ipairs(item.files or {}) do
+        if file.target == target then
+            return file
+        end
+    end
+
+    return nil
+end
+
 function Registry.listInstalled(registry)
     local result = {}
 
@@ -250,6 +325,8 @@ function Registry.listInstalled(registry)
             source = item.source,
             managedBy = item.managedBy,
             mount = item.mount,
+            sourceCommit = item.sourceCommit,
+            fileCount = #(item.files or {}),
             installedAt = item.installedAt,
             updatedAt = item.updatedAt
         }
