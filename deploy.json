@@ -1,11 +1,11 @@
 {
   "schema": 2,
-  "version": "0.23.0-alpha.1",
-  "sourceCommit": "08d49d21e8ebcddc54bfd40ab56debba8a7f9a19",
+  "version": "0.23.0-alpha.1.1",
+  "sourceCommit": "43a408acaf85c32fe1e31682737d551a6c0331a5",
   "hashAlgorithm": "git-blob-sha1",
   "files": [
     {"source":"deploy.json","target":"deploy.json","control":"manifest"},
-    {"source":"packages.json","target":"packages.json","size":7062,"hash":"be6146ceb1089671a6a40d701d50f3593f9b7845"},
+    {"source":"packages.json","target":"packages.json","size":7068,"hash":"ba5275b1f3730f2584d234e58226d5b90a0d334f"},
     {"source":"src/startup.lua","target":"startup.lua","size":1054,"hash":"7e6758a09ddcd4ea2954785cc0b8a4ad3c71d8f9","bootstrapProtected":true},
     {"source":"src/main.lua","target":"main.lua","size":12574,"hash":"994fea3ef96fa346e374a808a4728e1502096144"},
     {"source":"src/update.lua","target":"update.lua","size":2571,"hash":"7c4312052b866deab5bec02d18923e11283e32de","bootstrapProtected":true},
@@ -14,7 +14,7 @@
     {"source":"src/lib/runtime.lua","target":"lib/runtime.lua","size":3232,"hash":"af8c49a065c4d7d1aa526abc6e67e7403eedc4e4"},
     {"source":"src/lib/automation.lua","target":"lib/automation.lua","size":8826,"hash":"1f54f74473fc697bb67c8ed3da282faaf6b7b790"},
     {"source":"src/lib/defense/protocol.lua","target":"lib/defense/protocol.lua","size":3484,"hash":"f0ba50752c8243bb3a31ad887139fa7e6996190a"},
-    {"source":"src/lib/defense/controller.lua","target":"lib/defense/controller.lua","size":19655,"hash":"917f65adbc08bdf3b213f0b5ff9e17c7f9786da7"},
+    {"source":"src/lib/defense/controller.lua","target":"lib/defense/controller.lua","size":19715,"hash":"24710a010b1f14836313b0e784fbb0a3732049a8"},
     {"source":"src/lib/system/updater.lua","target":"lib/system/updater.lua","size":18018,"hash":"294435321a6309d46199198cb96c17001c11c55c","selfEngine":true},
     {"source":"src/lib/system/updater_core.lua","target":"lib/system/updater_core.lua","size":32254,"hash":"218011620bfd27abc1c7b3d1805451e97b20b0d2"},
     {"source":"src/lib/system/service_supervisor.lua","target":"lib/system/service_supervisor.lua","size":20114,"hash":"d6dde08c3d48b84b927e0b55d22a6fd3163acecc"},
@@ -61,8 +61,8 @@
     {"source":"src/apps/security.lua","target":"apps/security.lua","size":10012,"hash":"a99f810d25813b6bf93c2511aca365ac508f0c1d"},
     {"source":"src/apps/sandbox_probe.lua","target":"apps/sandbox_probe.lua","size":2012,"hash":"34c1fe717f207eebf699383f417a1fd1638aa152"},
     {"source":"src/apps/explorer.lua","target":"apps/explorer.lua","size":14548,"hash":"29558acbf029a00ad21ad6773ece6c4553f022a5"},
-    {"source":"src/apps/defense.lua","target":"apps/defense.lua","size":11040,"hash":"ae79ea9251dbd46f0da1da7dec75634b7d1eed74"},
-    {"source":"src/turtle/defense_agent.lua","target":"turtle/defense_agent.lua","size":16881,"hash":"c7102e4334e08fec979aa212b9dd17ff2b9d3f3e"}
+    {"source":"src/apps/defense.lua","target":"apps/defense.lua","size":11794,"hash":"d5c3c63d50f407ae2c0a24dbd7b0114cd6ff46ed"},
+    {"source":"src/turtle/defense_agent.lua","target":"turtle/defense_agent.lua","size":21031,"hash":"6bea1037a4ae8374cbaf59d30b67c7d4d9834bf3"}
   ],
   "remove": []
 }
