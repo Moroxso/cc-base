@@ -5,9 +5,9 @@ local MonitorRenderer = {}
 
 local files = {"a", "b", "c", "d", "e", "f", "g", "h"}
 
--- Monitor glyphs are deliberately hand-drawn instead of scaling the
--- terminal 4x2 sprite. Repeating ASCII characters horizontally/vertically
--- makes large monitor pieces look doubled or tripled.
+-- Do not scale terminal sprites by repeating characters. On large monitors
+-- that turns one ASCII stroke into 2-4 identical strokes and visually
+-- duplicates the piece. Instead choose a hand-drawn glyph for the cell size.
 local compactSprites = {
     pawn = {" o ", " ^ "},
     knight = {"/> ", "/_ "},
@@ -19,67 +19,67 @@ local compactSprites = {
 
 local mediumSprites = {
     pawn = {
-        "  ___  ",
-        " /   \\ ",
-        "  \\_/  ",
-        "  /_\\  "
+        "  (o)  ",
+        "   |   ",
+        "  /|\\  ",
+        " /___\\ "
     },
     knight = {
-        "  /\\   ",
-        " /  \\_ ",
-        "|  o  \\",
-        " \\___/ "
+        "  /^>  ",
+        " /  )_ ",
+        "|    / ",
+        " \\__/  "
     },
     bishop = {
         "  /\\   ",
-        " /  \\  ",
-        " \\()/  ",
+        " <  >  ",
+        "  ||   ",
         " _||_  "
     },
     rook = {
         "_|_|_|_",
-        "|_____|",""
+        "|_____|"," 
         " |   | ",
         "_|___|_"
     },
     queen = {
-        "* * * *",
-        " \\| |/ ",
-        "  \\_/  ",
-        " _/ \\_ "
+        "* ^ ^ *",
+        " \\___/ ",
+        "  | |  ",
+        " _|_|_ "
     },
     king = {
         "   +   ",
-        "  +++  ",
-        "  / \\  ",
-        "_/___\\_"
+        "  /|\\  ",
+        "  \\|/  ",
+        " _/ \\_ "
     }
 }
 
 local largeSprites = {
     pawn = {
-        "   ___   ",
+        "   (o)   ",
         "  /   \\  ",
         "  \\___/  ",
         "    |    ",
-        "   / \\   ",
+        "   /|\\   ",
         "  /___\\  "
     },
     knight = {
-        "    /\\   ",
-        "   /  \\_ ",
-        "  /  o  \\",
+        "   /^>   ",
+        "  /  )__ ",
         " /      |",
-        " \\__   /",
-        "  /___/  "
+        "|     __/",
+        " \\___/   ",
+        "  /___\\  "
     },
     bishop = {
         "    /\\   ",
         "   /  \\  ",
-        "   \\()/  ",
+        "  < () > ",
         "    ||   ",
         "   /  \\  ",
-        " _/____\\_"
+        " _/___\\_ "
     },
     rook = {
         " _|_|_|_ ",
@@ -90,18 +90,18 @@ local largeSprites = {
         "|_______|"
     },
     queen = {
-        "*  * *  *",
-        " \\ | | / ",
-        "  \\| |/  ",
-        "   \\_/   ",
+        "*  ^ ^  *",
+        " \\     / ",
+        "  \\___/  ",
+        "   | |   ",
         "  /   \\  ",
         "_/_____\\_"
     },
     king = {
         "    +    ",
         "   +++   ",
-        "    |    ",
-        "   / \\   ",
+        "   /|\\   ",
+        "   \\|/   ",
         "  /   \\  ",
         "_/_____\\_"
     }
@@ -172,7 +172,7 @@ local function squareBackground(game, x, y)
     return background
 end
 
-local function rowWidth(rows)
+local function maxRowWidth(rows)
     local width = 0
 
     for _, text in ipairs(rows or {}) do
@@ -183,7 +183,7 @@ local function rowWidth(rows)
 end
 
 local function drawRows(target, rows, x, y, cellWidth, cellHeight, foreground, background)
-    local spriteWidth = rowWidth(rows)
+    local spriteWidth = maxRowWidth(rows)
     local spriteHeight = #rows
     local px = x + math.max(0, math.floor((cellWidth - spriteWidth) / 2))
     local py = y + math.max(0, math.floor((cellHeight - spriteHeight) / 2))
