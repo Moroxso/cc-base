@@ -5,33 +5,13 @@ local MonitorRenderer = {}
 
 local files = {"a", "b", "c", "d", "e", "f", "g", "h"}
 
--- Spectator displays use several hand-drawn sprite tiers. We never enlarge
--- a smaller glyph by repeating characters: every tier is drawn explicitly.
 local compactSprites = {
-    pawn = {
-        [[ o ]],
-        [[ ^ ]]
-    },
-    knight = {
-        [[/> ]],
-        [[/_ ]]
-    },
-    bishop = {
-        [[/\ ]],
-        [[<> ]]
-    },
-    rook = {
-        [[[#]]],
-        [[|_|]]
-    },
-    queen = {
-        [[*^*]],
-        [[\_/]]
-    },
-    king = {
-        [[ + ]],
-        [[/_\]]
-    }
+    pawn = {[[ o ]], [[ ^ ]]},
+    knight = {[[/> ]], [[/_ ]]},
+    bishop = {[[/\ ]], [[<> ]]},
+    rook = {"[#]", "|_|"},
+    queen = {[[*^*]], [[\_/]]},
+    king = {[[ + ]], [[/_\]]}
 }
 
 local mediumSprites = {
@@ -130,6 +110,35 @@ local function clamp(value, minimum, maximum)
     return value
 end
 
+local function formatClock(milliseconds)
+    milliseconds = math.max(0, math.floor(tonumber(milliseconds) or 0))
+    local totalSeconds = math.ceil(milliseconds / 1000)
+    local minutes = math.floor(totalSeconds / 60)
+    local seconds = totalSeconds % 60
+    return string.format("%02d:%02d", minutes, seconds)
+end
+
+local function scoreText(value)
+    value = tonumber(value) or 0
+
+    if value == math.floor(value) then
+        return tostring(math.floor(value))
+    end
+
+    return string.format("%.1f", value)
+end
+
+local function shortName(value, maximum)
+    value = tostring(value or "?")
+    maximum = maximum or 18
+
+    if #value > maximum then
+        return value:sub(1, maximum)
+    end
+
+    return value
+end
+
 local function write(target, x, y, text, foreground, background, maxWidth)
     local width, height = target.getSize()
 
@@ -216,22 +225,22 @@ local function chooseSprite(piece, cellWidth, cellHeight)
     local kind = piece.kind
 
     if cellWidth >= 9 and cellHeight >= 6 and largeSprites[kind] then
-        return largeSprites[kind], "large"
+        return largeSprites[kind]
     end
 
     if cellWidth >= 7 and cellHeight >= 4 and mediumSprites[kind] then
-        return mediumSprites[kind], "medium"
+        return mediumSprites[kind]
     end
 
     if cellWidth >= 4 and cellHeight >= 2 then
-        return Pieces.sprite(piece), "standard"
+        return Pieces.sprite(piece)
     end
 
     if cellWidth >= 3 and cellHeight >= 2 and compactSprites[kind] then
-        return compactSprites[kind], "compact"
+        return compactSprites[kind]
     end
 
-    return nil, "symbol"
+    return nil
 end
 
 local function drawPiece(target, piece, x, y, cellWidth, cellHeight, background)
@@ -263,7 +272,19 @@ local function detailTier(cellWidth, cellHeight)
     return "SYMBOL"
 end
 
-local function statusText(game)
+local function statusText(game, tournament)
+    if type(tournament) == "table" and tournament.finished then
+        if tournament.result == "timeout" then
+            return "TIMEOUT"
+        elseif tournament.result == "checkmate" then
+            return "CHECKMATE"
+        elseif tournament.result == "stalemate" then
+            return "STALEMATE"
+        end
+
+        return tostring(tournament.result or "FINISHED"):upper()
+    end
+
     if game.status == "checkmate" then
         return "CHECKMATE " .. tostring(game.winner or "?"):upper() .. " WINS"
     elseif game.status == "stalemate" then
@@ -275,7 +296,42 @@ local function statusText(game)
     return "PLAY"
 end
 
+local function drawTournamentPanel(target, x, y, width, game, options, tier)
+    local tournament = options.tournament
+    local whiteName = shortName(tournament.whiteName, math.max(6, width - 9))
+    local blackName = shortName(tournament.blackName, math.max(6, width - 9))
+    local whiteClock = formatClock(tournament.whiteMs)
+    local blackClock = formatClock(tournament.blackMs)
+    local status = statusText(game, tournament)
+    local statusColor = tournament.finished and colors.yellow or
+        (game.inCheck and colors.red or colors.lime)
+
+    write(target, x, y, "TOURNAMENT", colors.yellow, colors.black, width)
+    write(target, x, y + 2, "W " .. whiteClock .. " " .. whiteName, colors.white, colors.black, width)
+    write(target, x, y + 3, "B " .. blackClock .. " " .. blackName, colors.lightGray, colors.black, width)
+    write(
+        target,
+        x,
+        y + 5,
+        "SCORE " .. scoreText(tournament.whiteScore) .. "-" .. scoreText(tournament.blackScore),
+        colors.cyan,
+        colors.black,
+        width
+    )
+    write(target, x, y + 6, "GAME #" .. tostring(tournament.gameNo or 1), colors.cyan, colors.black, width)
+    write(target, x, y + 8, "TURN: " .. tostring(game:getTurn()):upper(), colors.white, colors.black, width)
+    write(target, x, y + 9, "STATUS: " .. status, statusColor, colors.black, width)
+    write(target, x, y + 11, "NET: " .. tostring(options.networkState or "ONLINE"):upper(), options.networkState == "DISCONNECTED" and colors.red or colors.lime, colors.black, width)
+    write(target, x, y + 12, "MOVE: #" .. tostring(options.moveNo or 0), colors.lightGray, colors.black, width)
+    write(target, x, y + 14, "DETAIL: " .. tostring(tier), colors.gray, colors.black, width)
+end
+
 local function drawStatusPanel(target, x, y, width, game, options, tier)
+    if type(options.tournament) == "table" then
+        drawTournamentPanel(target, x, y, width, game, options, tier)
+        return
+    end
+
     local turn = tostring(game:getTurn() or "?"):upper()
     local last = Move.toText(game.lastMove)
 
@@ -296,9 +352,22 @@ local function drawStatusPanel(target, x, y, width, game, options, tier)
         write(target, x, y + 7, "MODE: LOCAL", colors.cyan, colors.black, width)
     end
 
-    if tier then
-        write(target, x, y + 11, "DETAIL: " .. tier, colors.gray, colors.black, width)
-    end
+    write(target, x, y + 11, "DETAIL: " .. tostring(tier), colors.gray, colors.black, width)
+end
+
+local function drawBottomTournament(target, y, width, game, options, tier)
+    local tournament = options.tournament
+    local whiteLine = "W " .. formatClock(tournament.whiteMs) .. " " .. shortName(tournament.whiteName, 18)
+    local blackLine = "B " .. formatClock(tournament.blackMs) .. " " .. shortName(tournament.blackName, 18)
+    local scoreLine = "SCORE " .. scoreText(tournament.whiteScore) .. "-" .. scoreText(tournament.blackScore) ..
+        "   GAME #" .. tostring(tournament.gameNo or 1)
+
+    write(target, 2, y, whiteLine, colors.white, colors.black, width - 2)
+    write(target, 2, y + 1, blackLine, colors.lightGray, colors.black, width - 2)
+    write(target, 2, y + 2, scoreLine, colors.cyan, colors.black, width - 2)
+    write(target, 2, y + 3, "TURN " .. tostring(game:getTurn()):upper() .. "   " .. statusText(game, tournament), colors.yellow, colors.black, width - 2)
+    write(target, 2, y + 4, "NETWORK " .. tostring(options.networkState or "ONLINE"):upper() .. "   MOVE #" .. tostring(options.moveNo or 0), colors.lime, colors.black, width - 2)
+    write(target, 2, y + 5, "DETAIL: " .. tier, colors.gray, colors.black, width - 2)
 end
 
 function MonitorRenderer.draw(target, game, options)
@@ -359,19 +428,35 @@ function MonitorRenderer.draw(target, game, options)
         drawStatusPanel(target, boardRegionWidth + 2, 3, panelWidth, game, options, tier)
     elseif reserveBottom > 0 then
         local statusY = math.min(height - reserveBottom + 1, boardY + boardHeight + 1)
-        local last = Move.toText(game.lastMove)
-        write(target, 2, statusY, "TURN: " .. tostring(game:getTurn()):upper() .. "   " .. statusText(game), colors.cyan, colors.black, width - 2)
-        write(target, 2, statusY + 1, "LAST: " .. last, colors.lightGray, colors.black, width - 2)
-        if options.mode == "NETWORK" then
-            write(target, 2, statusY + 2, "NETWORK " .. tostring(options.networkState or "ONLINE"):upper() .. "   MOVE #" .. tostring(options.moveNo or 0), colors.lime, colors.black, width - 2)
+
+        if type(options.tournament) == "table" then
+            drawBottomTournament(target, statusY, width, game, options, tier)
+        else
+            local last = Move.toText(game.lastMove)
+            write(target, 2, statusY, "TURN: " .. tostring(game:getTurn()):upper() .. "   " .. statusText(game), colors.cyan, colors.black, width - 2)
+            write(target, 2, statusY + 1, "LAST: " .. last, colors.lightGray, colors.black, width - 2)
+            if options.mode == "NETWORK" then
+                write(target, 2, statusY + 2, "NETWORK " .. tostring(options.networkState or "ONLINE"):upper() .. "   MOVE #" .. tostring(options.moveNo or 0), colors.lime, colors.black, width - 2)
+            end
+            write(target, 2, statusY + 3, "DETAIL: " .. tier, colors.gray, colors.black, width - 2)
         end
-        write(target, 2, statusY + 3, "DETAIL: " .. tier, colors.gray, colors.black, width - 2)
     end
 
-    local footer = "TURN " .. tostring(game:getTurn()):upper() .. " | " .. statusText(game)
-    if options.mode == "NETWORK" then
-        footer = footer .. " | #" .. tostring(options.moveNo or 0)
+    local footer
+
+    if type(options.tournament) == "table" then
+        local tournament = options.tournament
+        footer = "W " .. formatClock(tournament.whiteMs) ..
+            " | B " .. formatClock(tournament.blackMs) ..
+            " | G" .. tostring(tournament.gameNo or 1) ..
+            " | " .. statusText(game, tournament)
+    else
+        footer = "TURN " .. tostring(game:getTurn()):upper() .. " | " .. statusText(game)
+        if options.mode == "NETWORK" then
+            footer = footer .. " | #" .. tostring(options.moveNo or 0)
+        end
     end
+
     centered(target, height, footer, colors.white, colors.gray)
 
     target.setBackgroundColor(colors.black)
