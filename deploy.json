@@ -1,11 +1,11 @@
 {
   "schema": 2,
-  "version": "0.22.0-alpha.4.1",
-  "sourceCommit": "3131a5cbf140be9377b21eb91c15e714d5971ffc",
+  "version": "0.22.0-alpha.4.2",
+  "sourceCommit": "ca926f31d172b1d377af421c901499cb05e42847",
   "hashAlgorithm": "git-blob-sha1",
   "files": [
     {"source":"deploy.json","target":"deploy.json","control":"manifest"},
-    {"source":"packages.json","target":"packages.json","size":7068,"hash":"0b61bc33381c009c6a1ace611ec3d08a6fee20c2"},
+    {"source":"packages.json","target":"packages.json","size":7068,"hash":"fd4ca16ea791bf3d188275934f54404faa025d12"},
     {"source":"src/startup.lua","target":"startup.lua","size":1054,"hash":"7e6758a09ddcd4ea2954785cc0b8a4ad3c71d8f9","bootstrapProtected":true},
     {"source":"src/main.lua","target":"main.lua","size":12097,"hash":"dee4cb0fb98f64e44511f7c6a3f7503586749c99"},
     {"source":"src/update.lua","target":"update.lua","size":2571,"hash":"7c4312052b866deab5bec02d18923e11283e32de","bootstrapProtected":true},
@@ -58,7 +58,7 @@
     {"source":"src/apps/firewall.lua","target":"apps/firewall.lua","size":13212,"hash":"aecbfee26886171385457fa2b1f6afd50daeaf4f"},
     {"source":"src/apps/security.lua","target":"apps/security.lua","size":10012,"hash":"a99f810d25813b6bf93c2511aca365ac508f0c1d"},
     {"source":"src/apps/sandbox_probe.lua","target":"apps/sandbox_probe.lua","size":2012,"hash":"34c1fe717f207eebf699383f417a1fd1638aa152"},
-    {"source":"src/apps/explorer.lua","target":"apps/explorer.lua","size":14151,"hash":"f5c5ff10d4ed12d258378dd846ded7e9c59472d0"}
+    {"source":"src/apps/explorer.lua","target":"apps/explorer.lua","size":14548,"hash":"29558acbf029a00ad21ad6773ece6c4553f022a5"}
   ],
   "remove": []
 }
