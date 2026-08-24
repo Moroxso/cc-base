@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "version": "0.23.0-alpha.3",
+  "sourceCommit": "5c19c6227f4aa066ba675e0bc6d9c08ba0581277",
+  "hashAlgorithm": "git-blob-sha1",
+  "profiles": {
+    "assault": ["assault"],
+    "relay": ["assault"],
+    "pocket": ["pocket"]
+  },
+  "files": {
+    "common": {
+      "source": "src/lib/fleet/common.lua",
+      "target": "/lib/fleet/common.lua",
+      "size": 11338,
+      "hash": "f9f59711b65643c007ec98898cd6ffd3f0feae7e"
+    },
+    "assault": {
+      "source": "src/turtle/assault_agent.lua",
+      "target": "/assault_agent.lua",
+      "size": 24017,
+      "hash": "ccbf4df8b8ee3eac618a9f005fd1bb86ee0ea8cc"
+    },
+    "pocket": {
+      "source": "src/pocket/fleet_control.lua",
+      "target": "/fleet_control.lua",
+      "size": 13927,
+      "hash": "ed8ff4d22a38197e3282e351586b5333a2b36358"
+    },
+    "updater": {
+      "source": "src/fleet_update.lua",
+      "target": "/fleet_update.lua",
+      "size": 7511,
+      "hash": "cd04112b2a6a5dd9de206fb9bc8addfdf2058638"
+    },
+    "watchdog": {
+      "source": "src/fleet_watchdog.lua",
+      "target": "/fleet_watchdog.lua",
+      "size": 1862,
+      "hash": "d7446dfd3a12d85af7b215d44cfc6f31288c04a5"
+    },
+    "startup": {
+      "source": "src/fleet_startup.lua",
+      "target": "/startup/90_base_fleet.lua",
+      "size": 151,
+      "hash": "5311f6be99574f68b94b2a93d5e224478c1b05de"
+    }
+  }
+}
