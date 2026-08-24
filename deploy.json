@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "version": "0.23.0-alpha.3",
-  "sourceCommit": "5c19c6227f4aa066ba675e0bc6d9c08ba0581277",
+  "sourceCommit": "6a67cd385e34fa2956b625119854ba19c519b487",
   "hashAlgorithm": "git-blob-sha1",
   "files": [
     {"source":"deploy.json","target":"deploy.json","control":"manifest"},
