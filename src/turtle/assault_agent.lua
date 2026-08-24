@@ -60,7 +60,9 @@ local function firstRun()
     print("BASE Fleet Agent Setup")
     print("Computer ID: " .. os.getComputerID())
     local fleetId = ask("Fleet ID")
+    if fleetId == "" then error("Fleet ID cannot be empty", 0) end
     local key = ask("Fleet key")
+    if #key < 16 then error("Fleet key must be at least 16 characters", 0) end
     local name = ask("Unit name", os.getComputerLabel() or ("Unit-" .. os.getComputerID()))
     local role = string.upper(ask("Role ASSAULT/RELAY", "ASSAULT"))
     if role ~= "RELAY" then role = "ASSAULT" end
