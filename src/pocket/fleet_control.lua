@@ -37,13 +37,29 @@ local function ask(prompt, default)
     return value
 end
 
+local function collectFleetKey()
+    term.clear(); term.setCursorPos(1,1)
+    print("Fleet key entropy setup")
+    print("Press varied keys 24 times.")
+    local material = tostring(os.getComputerID()) .. ":" .. tostring(Common.nowMs())
+    for index = 1, 24 do
+        local _, code = os.pullEvent("key")
+        material = material .. ":" .. tostring(code) .. ":" .. tostring(Common.nowMs())
+        write(".")
+    end
+    print("")
+    local key, err = Common.sha1(material)
+    if not key then error("Key generation failed: " .. tostring(err), 0) end
+    return key
+end
+
 local function firstRun()
     Common.openModems()
     term.clear(); term.setCursorPos(1,1)
     print("BASE Fleet Pocket Setup")
     print("Pocket ID: " .. os.getComputerID())
     local fleetId = ask("Fleet ID", "F" .. tostring(os.getComputerID()))
-    local key = Common.randomHex(32)
+    local key = collectFleetKey()
     print("Generated fleet key:")
     print(key)
     print("Enter this exact key on each fleet turtle.")
