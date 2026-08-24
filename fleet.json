@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "version": "0.23.0-alpha.3",
-  "sourceCommit": "5c19c6227f4aa066ba675e0bc6d9c08ba0581277",
+  "sourceCommit": "6a67cd385e34fa2956b625119854ba19c519b487",
   "hashAlgorithm": "git-blob-sha1",
   "profiles": {
     "assault": ["assault"],
@@ -30,14 +30,14 @@
     "updater": {
       "source": "src/fleet_update.lua",
       "target": "/fleet_update.lua",
-      "size": 7511,
-      "hash": "cd04112b2a6a5dd9de206fb9bc8addfdf2058638"
+      "size": 8350,
+      "hash": "2d42bf6753097f122bffa3e25720dc1110d25898"
     },
     "watchdog": {
       "source": "src/fleet_watchdog.lua",
       "target": "/fleet_watchdog.lua",
-      "size": 1862,
-      "hash": "d7446dfd3a12d85af7b215d44cfc6f31288c04a5"
+      "size": 1890,
+      "hash": "02fe9e7f80bad5d641421ab40a22c3bc28c421eb"
     },
     "startup": {
       "source": "src/fleet_startup.lua",
