@@ -156,6 +156,13 @@ end
 local function command(command)
     local unit = selectedUnit()
     if not unit then message = "No unit selected"; return end
+    if groupMode and (command == "forward" or command == "back"
+        or command == "turn_left" or command == "turn_right"
+        or command == "up" or command == "down")
+    then
+        message = "Group movement locked in alpha2"
+        return
+    end
     local target = groupMode and "ASSAULT" or unit.id
     config.commandSeq = config.commandSeq + 1
     saveConfig()
