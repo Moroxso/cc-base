@@ -1,11 +1,11 @@
 {
   "schema": 2,
-  "version": "0.23.0-alpha.2",
-  "sourceCommit": "b9d7a865c6fe241dadb8b8f62fe739150ee35601",
+  "version": "0.23.0-alpha.3",
+  "sourceCommit": "5c19c6227f4aa066ba675e0bc6d9c08ba0581277",
   "hashAlgorithm": "git-blob-sha1",
   "files": [
     {"source":"deploy.json","target":"deploy.json","control":"manifest"},
-    {"source":"packages.json","target":"packages.json","size":7062,"hash":"4231a8b4b19ff772259db138e7acd99fbe8d1723"},
+    {"source":"packages.json","target":"packages.json","size":7062,"hash":"4009807a0d6f5d9e8af8c8e090ffc4044c9d966a"},
     {"source":"src/startup.lua","target":"startup.lua","size":1054,"hash":"7e6758a09ddcd4ea2954785cc0b8a4ad3c71d8f9","bootstrapProtected":true},
     {"source":"src/main.lua","target":"main.lua","size":12574,"hash":"994fea3ef96fa346e374a808a4728e1502096144"},
     {"source":"src/update.lua","target":"update.lua","size":2571,"hash":"7c4312052b866deab5bec02d18923e11283e32de","bootstrapProtected":true},
@@ -63,8 +63,8 @@
     {"source":"src/apps/sandbox_probe.lua","target":"apps/sandbox_probe.lua","size":2012,"hash":"34c1fe717f207eebf699383f417a1fd1638aa152"},
     {"source":"src/apps/explorer.lua","target":"apps/explorer.lua","size":14548,"hash":"29558acbf029a00ad21ad6773ece6c4553f022a5"},
     {"source":"src/apps/defense.lua","target":"apps/defense.lua","size":11794,"hash":"d5c3c63d50f407ae2c0a24dbd7b0114cd6ff46ed"},
-    {"source":"src/pocket/fleet_control.lua","target":"pocket/fleet_control.lua","size":10112,"hash":"2e46945a4f3081afa93de3d8c84371a4ee724ef0"},
-    {"source":"src/turtle/assault_agent.lua","target":"turtle/assault_agent.lua","size":15143,"hash":"aa6bbcab424b9f108274430ba6553b99fa13d3aa"},
+    {"source":"src/pocket/fleet_control.lua","target":"pocket/fleet_control.lua","size":13927,"hash":"ed8ff4d22a38197e3282e351586b5333a2b36358"},
+    {"source":"src/turtle/assault_agent.lua","target":"turtle/assault_agent.lua","size":24017,"hash":"ccbf4df8b8ee3eac618a9f005fd1bb86ee0ea8cc"},
     {"source":"src/turtle/defense_agent.lua","target":"turtle/defense_agent.lua","size":21031,"hash":"6bea1037a4ae8374cbaf59d30b67c7d4d9834bf3"}
   ],
   "remove": []
