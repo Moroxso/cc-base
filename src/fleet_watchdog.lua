@@ -29,11 +29,12 @@ end
 
 local function runUpdater(force)
     if not fs.exists("/fleet_update.lua") then return false end
+    local action = force and "repair" or "update"
     if force or not fs.exists(program) or not fs.exists("/lib/fleet/common.lua") then
-        return shell.run("/fleet_update.lua", "update", profile.profile) ~= false
+        return shell.run("/fleet_update.lua", action, profile.profile) ~= false
     end
-    -- Normal boot performs a quiet integrity/version check. Network failure is non-fatal.
-    return shell.run("/fleet_update.lua", "update", profile.profile, "--quiet") ~= false
+    -- Normal boot fetches only the small manifest when already current.
+    return shell.run("/fleet_update.lua", action, profile.profile, "--quiet") ~= false
 end
 
 local forced = fs.exists(FORCE_UPDATE_PATH)
