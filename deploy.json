@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "version": "0.23.0-alpha.2",
-  "sourceCommit": "7ffacfcfbbba47cae3046d0bbb860bbd23444531",
+  "sourceCommit": "16de9c7d374c734a24e55e2263ce12a8c703e9b0",
   "hashAlgorithm": "git-blob-sha1",
   "files": [
     {"source":"deploy.json","target":"deploy.json","control":"manifest"},
@@ -63,8 +63,8 @@
     {"source":"src/apps/sandbox_probe.lua","target":"apps/sandbox_probe.lua","size":2012,"hash":"34c1fe717f207eebf699383f417a1fd1638aa152"},
     {"source":"src/apps/explorer.lua","target":"apps/explorer.lua","size":14548,"hash":"29558acbf029a00ad21ad6773ece6c4553f022a5"},
     {"source":"src/apps/defense.lua","target":"apps/defense.lua","size":11794,"hash":"d5c3c63d50f407ae2c0a24dbd7b0114cd6ff46ed"},
-    {"source":"src/pocket/fleet_control.lua","target":"pocket/fleet_control.lua","size":9282,"hash":"5e629a1b301ce37243c757a51926608206397669"},
-    {"source":"src/turtle/assault_agent.lua","target":"turtle/assault_agent.lua","size":14997,"hash":"9b5bcddb874b518acfb2245f58e6eb158c35e47b"},
+    {"source":"src/pocket/fleet_control.lua","target":"pocket/fleet_control.lua","size":9854,"hash":"ba12ddcffe4f6638185e9ddd42b6a118e40db746"},
+    {"source":"src/turtle/assault_agent.lua","target":"turtle/assault_agent.lua","size":15143,"hash":"aa6bbcab424b9f108274430ba6553b99fa13d3aa"},
     {"source":"src/turtle/defense_agent.lua","target":"turtle/defense_agent.lua","size":21031,"hash":"6bea1037a4ae8374cbaf59d30b67c7d4d9834bf3"}
   ],
   "remove": []
