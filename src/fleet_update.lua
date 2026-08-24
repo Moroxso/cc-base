@@ -8,6 +8,7 @@ local MANIFEST_URL = "https://raw.githubusercontent.com/" .. REPO .. "/refs/head
 local PROFILE_PATH = "/data/fleet_profile.json"
 local RUNTIME_PATH = "/data/fleet_runtime.json"
 local STARTUP_DIR = "/startup"
+local STARTUP_PATH = "/startup/90_base_fleet.lua"
 
 local function say(text)
     if not quiet then print(text) end
@@ -92,6 +93,9 @@ end
 if action ~= "install" and profile == "" then
     error("Fleet profile missing. Run fleet_update install <profile>.", 0)
 end
+if action ~= "install" and action ~= "update" and action ~= "repair" then
+    error("Usage: fleet_update install|update|repair [profile]", 0)
+end
 if profile ~= "assault" and profile ~= "relay" and profile ~= "pocket" then
     error("Unknown fleet profile: " .. tostring(profile), 0)
 end
@@ -108,6 +112,22 @@ if not okManifest or type(manifest) ~= "table" or manifest.schema ~= 1 then
 end
 if type(manifest.sourceCommit) ~= "string" or #manifest.sourceCommit < 7 then error("Manifest sourceCommit missing", 0) end
 if type(manifest.profiles) ~= "table" or type(manifest.profiles[profile]) ~= "table" then error("Profile absent from manifest", 0) end
+
+local profileProgram = profile == "pocket" and "/fleet_control.lua" or "/assault_agent.lua"
+local runtime = readJson(RUNTIME_PATH)
+local essentialsPresent = fs.exists("/lib/fleet/common.lua")
+    and fs.exists("/fleet_update.lua")
+    and fs.exists("/fleet_watchdog.lua")
+    and fs.exists(STARTUP_PATH)
+    and fs.exists(profileProgram)
+if action == "update" and essentialsPresent and type(runtime) == "table"
+    and runtime.version == manifest.version
+    and runtime.sourceCommit == manifest.sourceCommit
+    and runtime.profile == profile
+then
+    say("Fleet runtime already current: " .. tostring(manifest.version))
+    return true
+end
 
 -- Fresh field computers do not have lib.fleet.common yet. Bootstrap it from the
 -- same immutable payload commit, then use its SHA-1 implementation to verify
