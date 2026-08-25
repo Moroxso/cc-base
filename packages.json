@@ -220,7 +220,7 @@
           "source": "src/games/chess/display_menu.lua",
           "target": "games/chess/display_menu.lua",
           "size": 8508,
-          "hash": "0e87592a9726f81a63314aeba6401da73f1577ff"
+          "hash": "0e87592a9726cf9db36563ee0e9bbfe4951a4fdf"
         },
         {
           "source": "src/games/chess/monitor_renderer.lua",
