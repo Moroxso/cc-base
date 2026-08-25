@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version": "0.23.0-alpha.3",
-  "sourceCommit": "6a67cd385e34fa2956b625119854ba19c519b487",
+  "version": "0.23.0-alpha.4",
+  "sourceCommit": "a7090947a5cb70bc1c6a8390382072966f8f5789",
   "hashAlgorithm": "git-blob-sha1",
   "profiles": {
-    "assault": ["assault"],
-    "relay": ["assault"],
-    "pocket": ["pocket"]
+    "assault": ["assault", "startup"],
+    "relay": ["assault", "startup"],
+    "pocket": ["pocket_os", "pocket_control", "pocket_jobs", "pocket_startup"]
   },
   "files": {
     "common": {
@@ -18,26 +18,44 @@
     "assault": {
       "source": "src/turtle/assault_agent.lua",
       "target": "/assault_agent.lua",
-      "size": 24017,
-      "hash": "ccbf4df8b8ee3eac618a9f005fd1bb86ee0ea8cc"
+      "size": 26459,
+      "hash": "8114c7eba6d22879679423a74c69e7d85348647e"
     },
-    "pocket": {
+    "pocket_control": {
       "source": "src/pocket/fleet_control.lua",
       "target": "/fleet_control.lua",
-      "size": 13927,
-      "hash": "ed8ff4d22a38197e3282e351586b5333a2b36358"
+      "size": 11376,
+      "hash": "1f0c3f351f57e2b4066a79e94c02c747e32a91ec"
+    },
+    "pocket_jobs": {
+      "source": "src/pocket/fleet_jobs.lua",
+      "target": "/fleet_jobs.lua",
+      "size": 8592,
+      "hash": "eb00b499294a48d789efb4875a12af0cf07f23f2"
+    },
+    "pocket_os": {
+      "source": "src/pocket/pocket_os.lua",
+      "target": "/pocket_os.lua",
+      "size": 3984,
+      "hash": "1749ee25a1f618fa63ca475bc763a27637fbfd31"
+    },
+    "pocket_startup": {
+      "source": "src/pocket/pocket_startup.lua",
+      "target": "/startup.lua",
+      "size": 162,
+      "hash": "cc8f6a7745f4f78caf685165b2a88fa56bd95c61"
     },
     "updater": {
       "source": "src/fleet_update.lua",
       "target": "/fleet_update.lua",
-      "size": 8350,
-      "hash": "2d42bf6753097f122bffa3e25720dc1110d25898"
+      "size": 7933,
+      "hash": "d29306ef81a21b9e51e9460192f3f1b161107f78"
     },
     "watchdog": {
       "source": "src/fleet_watchdog.lua",
       "target": "/fleet_watchdog.lua",
-      "size": 1890,
-      "hash": "02fe9e7f80bad5d641421ab40a22c3bc28c421eb"
+      "size": 1583,
+      "hash": "86b8e808dab41c4f779831dfeb8947fcf9df47f4"
     },
     "startup": {
       "source": "src/fleet_startup.lua",
