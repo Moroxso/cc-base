@@ -1,8 +1,9 @@
 local Common = require("lib.fleet.common")
 
-local VERSION = "0.23.0-alpha.4"
+local VERSION = "0.23.0-alpha.4.1"
 local CONFIG_PATH = "/data/fleet_operator.json"
 local UNIT_STALE_MS = 20000
+local JOB_STALE_MS = 12000
 local REPEAT_COUNT = 3
 local REPEAT_DELAY = 0.22
 
@@ -46,6 +47,41 @@ local function relay(packet)
     if forwarded then Common.broadcast(forwarded) end
 end
 
+local function ensureUnit(unitId)
+    local u=units[unitId]
+    if not u then
+        u={
+            id=unitId,name="Unit-"..tostring(unitId),role="ASSAULT",state="?",fuel="?",
+            job=nil,version="?",lastSeen=0,hops="?",jobProgressSeen=0,jobSignature=""
+        }
+        units[unitId]=u
+    end
+    return u
+end
+
+local function jobSignature(job)
+    if type(job)~="table" then return "" end
+    return table.concat({
+        tostring(job.id or ""),tostring(job.phase or ""),
+        tostring(job.outbound or 0),tostring(job.returned or 0),
+        tostring(job.recoveries or 0)
+    },":")
+end
+
+local function applyJob(u,job,now)
+    now=now or Common.nowMs()
+    local sig=jobSignature(job)
+    if sig~=u.jobSignature then
+        u.jobProgressSeen=now
+        u.jobSignature=sig
+    end
+    u.job=type(job)=="table" and job or nil
+    if not u.job then
+        u.jobProgressSeen=0
+        u.jobSignature=""
+    end
+end
+
 local function handlePacket(packet,protocol)
     if protocol~=Common.REDNET_PROTOCOL then return end
     local valid=Common.verify(packet,config.key,config.fleetId)
@@ -53,21 +89,55 @@ local function handlePacket(packet,protocol)
     local id=Common.packetId(packet)
     if Common.seen(seen,id) then return end
     Common.markSeen(seen,id)
+    local now=Common.nowMs()
+
     if packet.type=="status" then
         local p=packet.payload
         local unitId=tonumber(p.unit or packet.origin)
         if unitId then
-            units[unitId]={
-                id=unitId,name=tostring(p.name or ("Unit-"..unitId)),role=tostring(p.role or "?"),
-                state=tostring(p.state or "?"),fuel=p.fuel,job=p.job,version=p.version,
-                lastSeen=Common.nowMs(),hops=Common.DEFAULT_TTL-math.max(0,tonumber(packet.ttl) or 0)
-            }
+            local u=ensureUnit(unitId)
+            u.name=tostring(p.name or u.name)
+            u.role=tostring(p.role or u.role)
+            u.state=tostring(p.state or u.state)
+            u.fuel=p.fuel
+            u.version=p.version or u.version
+            u.lastSeen=now
+            u.hops=Common.DEFAULT_TTL-math.max(0,tonumber(packet.ttl) or 0)
+            applyJob(u,p.job,now)
         end
+
     elseif packet.type=="job_event" then
         local p=packet.payload
-        message=string.format("#%s JOB %s %s",tostring(p.unit or packet.origin),p.success and "DONE" or "FAIL",tostring(p.reason or ""))
+        local unitId=tonumber(p.unit or packet.origin)
+        if unitId then
+            local u=ensureUnit(unitId)
+            u.lastSeen=now
+            u.role="ASSAULT"
+            local eventName=tostring(p.event or "")
+            if eventName=="START" or eventName=="PROGRESS" or eventName=="RETURN"
+                or eventName=="RESUME" or eventName=="RECOVER"
+            then
+                applyJob(u,{
+                    id=p.id,type=p.type,phase=p.phase,outbound=p.outbound,returned=p.returned,
+                    distance=p.distance,reason=p.reason,delay=p.delay,recoveries=p.recoveries
+                },now)
+                u.state="JOB:"..tostring(p.phase or eventName)
+                message=string.format("#%s %s %s %s/%s",unitId,eventName,tostring(p.phase or "?"),tostring(p.outbound or 0),tostring(p.distance or 0))
+            else
+                applyJob(u,nil,now)
+                u.state=eventName=="DONE" and "JOB_DONE" or "JOB_FAILED"
+                message=string.format("#%s JOB %s %s",unitId,eventName~="" and eventName or (p.success and "DONE" or "FAIL"),tostring(p.reason or ""))
+            end
+        end
+
     elseif packet.type=="result" then
         local p=packet.payload
+        local unitId=tonumber(p.unit or packet.origin)
+        if unitId then
+            local u=ensureUnit(unitId)
+            u.lastSeen=now
+            if type(p.job)=="table" then applyJob(u,p.job,now) end
+        end
         if p.command=="job_tunnel_roundtrip" or p.command=="job_cancel" then
             message=string.format("#%s %s %s",tostring(p.unit or packet.origin),p.ok and "ACK" or "FAIL",tostring(p.detail or ""))
         end
@@ -77,14 +147,17 @@ end
 
 local function onlineCounts()
     local now=Common.nowMs()
-    local assault,relayCount,busy=0,0,0
+    local assault,relayCount,busy,stalled=0,0,0,0
     for _,u in pairs(units) do
         if now-(u.lastSeen or 0)<=UNIT_STALE_MS then
             if u.role=="ASSAULT" then assault=assault+1 else relayCount=relayCount+1 end
-            if type(u.job)=="table" then busy=busy+1 end
+            if type(u.job)=="table" then
+                busy=busy+1
+                if u.jobProgressSeen>0 and now-u.jobProgressSeen>JOB_STALE_MS then stalled=stalled+1 end
+            end
         end
     end
-    return assault,relayCount,busy
+    return assault,relayCount,busy,stalled
 end
 
 local function issue(command,args,target)
@@ -109,8 +182,11 @@ local function confirm(text)
     print("Y=CONFIRM  N/ESC=CANCEL")
     while true do
         local e,a=os.pullEvent()
-        if e=="char" then if a:lower()=="y" then return true elseif a:lower()=="n" then return false end
-        elseif e=="key" then if a==keys.y then return true elseif a==keys.n or a==keys.escape then return false end end
+        if e=="char" then
+            if a:lower()=="y" then return true elseif a:lower()=="n" then return false end
+        elseif e=="key" then
+            if a==keys.y then return true elseif a==keys.n or a==keys.escape then return false end
+        end
     end
 end
 
@@ -138,6 +214,8 @@ local function cancelJobs()
 end
 
 local function updateFleet()
+    local _,_,busy=onlineCounts()
+    if busy>0 then message="Update blocked: active jobs="..tostring(busy); return end
     if not confirm("Update all Fleet nodes? Units may reboot.") then message="Update cancelled"; return end
     issue("update",{},"*")
     message="Fleet update dispatched"
@@ -154,21 +232,37 @@ local function draw()
     term.setBackgroundColor(colors.black); term.setTextColor(colors.white); term.clear()
     term.setCursorPos(1,1); term.setBackgroundColor(colors.orange); term.write(string.rep(" ",w)); term.setCursorPos(1,1); term.setTextColor(colors.black); term.write("BASE POCKET / FLEET JOBS")
     term.setBackgroundColor(colors.black)
-    local assault,relays,busy=onlineCounts()
+    local assault,relays,busy,stalled=onlineCounts()
     textAt(3,string.format("Fleet %s",config.fleetId),colors.lightGray)
     textAt(4,string.format("ASSAULT online: %d",assault))
     textAt(5,string.format("RELAY online:   %d",relays))
-    textAt(6,string.format("Active jobs:    %d",busy),busy>0 and colors.yellow or colors.lightGray)
+    textAt(6,string.format("Jobs:%d  stalled:%d",busy,stalled),stalled>0 and colors.red or (busy>0 and colors.yellow or colors.lightGray))
     local row=8
     local now=Common.nowMs()
-    local list={}; for _,u in pairs(units) do if now-(u.lastSeen or 0)<=UNIT_STALE_MS and u.role=="ASSAULT" then list[#list+1]=u end end
+    local list={}
+    for _,u in pairs(units) do
+        if now-(u.lastSeen or 0)<=UNIT_STALE_MS and u.role=="ASSAULT" then list[#list+1]=u end
+    end
     table.sort(list,function(a,b) return a.id<b.id end)
     local visible=math.max(1,h-13)
     for i=1,math.min(#list,visible) do
         local u=list[i]
         local job="IDLE"
-        if type(u.job)=="table" then job=string.format("%s %d/%d",tostring(u.job.phase or "?"),tonumber(u.job.phase=="OUT" and u.job.outbound or u.job.returned) or 0,tonumber(u.job.phase=="OUT" and u.job.distance or u.job.outbound) or 0) end
-        textAt(row+i-1,string.format("#%s F:%s %s",u.id,tostring(u.fuel or "?"),job))
+        local color=colors.white
+        if type(u.job)=="table" then
+            local phase=tostring(u.job.phase or "?")
+            local current=tonumber(phase=="OUT" and u.job.outbound or u.job.returned) or 0
+            local total=tonumber(phase=="OUT" and u.job.distance or u.job.outbound) or 0
+            if u.jobProgressSeen>0 and now-u.jobProgressSeen>JOB_STALE_MS then
+                job=string.format("STALLED %s %d/%d",phase,current,total)
+                color=colors.red
+            else
+                job=string.format("%s %d/%d",phase,current,total)
+                if tonumber(u.job.recoveries or 0)>0 then job=job.." R"..tostring(u.job.recoveries) end
+                color=colors.yellow
+            end
+        end
+        textAt(row+i-1,string.format("#%s F:%s %s",u.id,tostring(u.fuel or "?"),job),color)
     end
     textAt(h-3,message,colors.orange)
     textAt(h-2,"T tunnel roundtrip   C cancel/return",colors.lightGray)
