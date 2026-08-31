@@ -1,7 +1,8 @@
 local Common = require("lib.fleet.common")
 
-local VERSION = "0.23.0-alpha.4"
+local VERSION = "0.23.0-alpha.4.1"
 local CONFIG_PATH = "/data/fleet_agent.json"
+local JOB_STATE_PATH = "/data/fleet_job.json"
 local FORCE_UPDATE_PATH = "/data/fleet_force_update"
 local LINK_RECOVERY_SECONDS = 2
 local LINK_REBOOT_MS = 180000
@@ -16,6 +17,8 @@ local JOB_MIN_DELAY = 0.05
 local JOB_MAX_DELAY = 2.0
 local JOB_DEFAULT_DELAY = 0.15
 local JOB_START_STAGGER = 0.025
+local JOB_STALL_MS = 7000
+local JOB_PROGRESS_EVENT_STEPS = 5
 
 if type(turtle) ~= "table" then error("Fleet agent must run on a turtle", 0) end
 
@@ -135,6 +138,7 @@ local lastValidMesh, everLinked = 0, false
 local poseDirty = false
 local activeJob = nil
 local jobTimer = nil
+local lastJobProgressMs = 0
 
 local function saveConfig()
     config.nav = {x=navPosition.x, y=navPosition.y, z=navPosition.z, frame=navPosition.frame}
@@ -249,7 +253,8 @@ local function capabilitySnapshot()
     return {
         move=true, modem=#Common.openModems()>0,
         melee=inventoryHas("sword"), dig=inventoryHas("pickaxe"), nav=true,
-        relay=config.role=="RELAY", autoUpdate=fs.exists("/fleet_update.lua"), jobs=true
+        relay=config.role=="RELAY", autoUpdate=fs.exists("/fleet_update.lua"), jobs=true,
+        jobRecovery=true
     }
 end
 
@@ -343,29 +348,71 @@ local function rtbStep()
     if not ok then state="RTB_BLOCKED:"..tostring(err or "blocked"); rtbActive=false end
 end
 
-local function jobPayload()
-    if not activeJob then return nil end
+local function jobPayload(job)
+    job = job or activeJob
+    if not job then return nil end
     return {
-        id=activeJob.id, type=activeJob.type, phase=activeJob.phase,
-        outbound=activeJob.outbound, returned=activeJob.returned, distance=activeJob.distance,
-        reason=activeJob.reason, delay=activeJob.delay
+        id=job.id, type=job.type, phase=job.phase,
+        outbound=job.outbound, returned=job.returned, distance=job.distance,
+        reason=job.reason, delay=job.delay, recoveries=job.recoveries or 0
     }
+end
+
+local function saveJobState()
+    if not activeJob then
+        if fs.exists(JOB_STATE_PATH) then pcall(fs.delete, JOB_STATE_PATH) end
+        return true
+    end
+    return writeJson(JOB_STATE_PATH, {
+        schema=1,
+        savedAt=Common.nowMs(),
+        job=jobPayload(activeJob),
+        startHeading=activeJob.startHeading,
+        nav={x=navPosition.x,y=navPosition.y,z=navPosition.z,frame=navPosition.frame},
+        heading=config.heading
+    })
+end
+
+local function emitJobEvent(eventName, job, success, reason)
+    job = job or activeJob
+    if not job then return end
+    local payload = jobPayload(job)
+    payload.unit = os.getComputerID()
+    payload.event = eventName
+    payload.success = success
+    payload.reason = reason or payload.reason
+    send("job_event", "*", payload)
 end
 
 local function finishJob(success, reason)
     if not activeJob then return end
     local job = activeJob
-    activeJob = nil; jobTimer = nil
+    activeJob = nil; jobTimer = nil; lastJobProgressMs = 0
     state = success and "JOB_DONE" or "JOB_FAILED"
-    send("job_event", "*", {
-        unit=os.getComputerID(), id=job.id, success=success, reason=reason,
-        outbound=job.outbound, returned=job.returned, distance=job.distance
-    })
+    if fs.exists(JOB_STATE_PATH) then pcall(fs.delete, JOB_STATE_PATH) end
+    emitJobEvent(success and "DONE" or "FAIL", job, success, reason)
     if poseDirty then saveConfig(); poseDirty=false end
 end
 
 local function scheduleJobStep(delay)
     jobTimer = os.startTimer(math.max(JOB_MIN_DELAY, tonumber(delay) or JOB_DEFAULT_DELAY))
+end
+
+local function markJobProgress(eventName)
+    lastJobProgressMs = Common.nowMs()
+    if activeJob then
+        saveJobState()
+        if eventName then emitJobEvent(eventName, activeJob) end
+    end
+end
+
+local function switchJobToReturn(reason)
+    if not activeJob then return end
+    if reason and reason ~= "" and activeJob.reason == "" then activeJob.reason = tostring(reason) end
+    activeJob.phase = "RETURN"
+    state = "JOB:RETURN"
+    markJobProgress("RETURN")
+    scheduleJobStep(activeJob.delay)
 end
 
 local function startTunnelJob(args, requestId)
@@ -384,9 +431,12 @@ local function startTunnelJob(args, requestId)
     activeJob = {
         id=tostring(args.jobId or requestId or ("job-"..Common.nowMs())), type="tunnel_roundtrip",
         phase="OUT", distance=distance, outbound=0, returned=0, delay=delay,
-        reason="", startHeading=config.heading
+        reason="", startHeading=config.heading, recoveries=0
     }
     state="JOB:OUT"
+    lastJobProgressMs=Common.nowMs()
+    saveJobState()
+    emitJobEvent("START", activeJob)
     local stagger=(os.getComputerID()%24)*JOB_START_STAGGER
     scheduleJobStep(delay + stagger)
     return true, "job_started:" .. tostring(distance)
@@ -397,7 +447,10 @@ local function requestJobReturn(reason)
     activeJob.reason = tostring(reason or "OPERATOR_ABORT")
     activeJob.phase = "RETURN"
     state = "JOB:RETURN"
-    if not jobTimer then scheduleJobStep(activeJob.delay) end
+    markJobProgress("RETURN")
+    -- Always create a fresh timer. A stale timer ID is one of the failure modes
+    -- observed on the Polymania port under multi-turtle load.
+    scheduleJobStep(activeJob.delay)
     return true, "returning"
 end
 
@@ -406,46 +459,132 @@ local function jobStep()
     local job=activeJob
     if not job then return end
     autoRefuel()
+
     if job.phase=="OUT" then
         if job.outbound >= job.distance then
-            job.phase="RETURN"; state="JOB:RETURN"; scheduleJobStep(job.delay); return
+            switchJobToReturn()
+            return
         end
+
         local toolOk, toolErr=ensureTool("pickaxe")
-        if not toolOk then job.reason=toolErr; job.phase="RETURN"; state="JOB:RETURN"; scheduleJobStep(job.delay); return end
-        local detected=false; pcall(function() detected=turtle.detect() end)
+        if not toolOk then switchJobToReturn(toolErr); return end
+
+        local detected=false
+        pcall(function() detected=turtle.detect() end)
         if detected then
             local dug, digErr=turtle.dig()
-            if not dug then job.reason="dig_failed:"..tostring(digErr or "blocked"); job.phase="RETURN"; state="JOB:RETURN"; scheduleJobStep(job.delay); return end
+            if not dug then switchJobToReturn("dig_failed:"..tostring(digErr or "blocked")); return end
         end
+
         local moved, moveErr=move("forward")
-        if not moved then
-            job.reason="move_failed:"..tostring(moveErr or "blocked")
-            job.phase="RETURN"; state="JOB:RETURN"; scheduleJobStep(job.delay); return
-        end
+        if not moved then switchJobToReturn("move_failed:"..tostring(moveErr or "blocked")); return end
+
         job.outbound=job.outbound+1
         state="JOB:OUT "..job.outbound.."/"..job.distance
+        lastJobProgressMs=Common.nowMs()
+        saveJobState()
+
+        if job.outbound >= job.distance then
+            -- Do not wait for one extra timer pulse at the far end. On the
+            -- Polymania port this was the exact point at which completed OUT
+            -- phases could remain stuck forever at N/N.
+            switchJobToReturn()
+            return
+        end
+
+        if job.outbound % JOB_PROGRESS_EVENT_STEPS == 0 then emitJobEvent("PROGRESS", job) end
         scheduleJobStep(job.delay + (os.getComputerID()%7)*0.003)
+
     elseif job.phase=="RETURN" then
         if job.returned >= job.outbound then
             finishJob(job.reason=="", job.reason~="" and job.reason or "complete")
             return
         end
+
         local moved, moveErr=move("back")
         if not moved then
             finishJob(false, "return_blocked:"..tostring(moveErr or "blocked"))
             return
         end
+
         job.returned=job.returned+1
         state="JOB:RETURN "..job.returned.."/"..job.outbound
+        lastJobProgressMs=Common.nowMs()
+        saveJobState()
+
+        if job.returned >= job.outbound then
+            finishJob(job.reason=="", job.reason~="" and job.reason or "complete")
+            return
+        end
+
+        if job.returned % JOB_PROGRESS_EVENT_STEPS == 0 then emitJobEvent("PROGRESS", job) end
         scheduleJobStep(job.delay + (os.getComputerID()%7)*0.003)
+    else
+        finishJob(false, "bad_job_phase:"..tostring(job.phase))
     end
+end
+
+local function restoreJobState()
+    local saved = readJson(JOB_STATE_PATH)
+    if type(saved) ~= "table" or saved.schema ~= 1 or type(saved.job) ~= "table" then return false end
+    local job = saved.job
+    if job.type ~= "tunnel_roundtrip" then return false end
+    local distance = math.floor(tonumber(job.distance) or 0)
+    local outbound = math.floor(tonumber(job.outbound) or 0)
+    local returned = math.floor(tonumber(job.returned) or 0)
+    local phase = tostring(job.phase or "")
+    if distance < 1 or distance > JOB_MAX_DISTANCE then return false end
+    if phase ~= "OUT" and phase ~= "RETURN" then return false end
+    outbound = math.max(0, math.min(distance, outbound))
+    returned = math.max(0, math.min(outbound, returned))
+    local delay = math.max(JOB_MIN_DELAY, math.min(JOB_MAX_DELAY, tonumber(job.delay) or JOB_DEFAULT_DELAY))
+
+    activeJob = {
+        id=tostring(job.id or ("recovered-"..Common.nowMs())), type="tunnel_roundtrip",
+        phase=phase, distance=distance, outbound=outbound, returned=returned, delay=delay,
+        reason=tostring(job.reason or ""), startHeading=math.floor(tonumber(saved.startHeading) or config.heading)%4,
+        recoveries=math.floor(tonumber(job.recoveries) or 0)+1
+    }
+
+    if type(saved.nav)=="table" then
+        navPosition={
+            x=tonumber(saved.nav.x) or navPosition.x,
+            y=tonumber(saved.nav.y) or navPosition.y,
+            z=tonumber(saved.nav.z) or navPosition.z,
+            frame=tostring(saved.nav.frame or navPosition.frame)
+        }
+    end
+    if tonumber(saved.heading) then config.heading=math.floor(tonumber(saved.heading))%4 end
+
+    state="JOB:RESUME "..activeJob.phase
+    lastJobProgressMs=Common.nowMs()
+    saveJobState()
+    emitJobEvent("RESUME", activeJob)
+    local stagger=(os.getComputerID()%24)*JOB_START_STAGGER
+    scheduleJobStep(activeJob.delay + stagger)
+    return true
+end
+
+local function recoverStalledJob()
+    if not activeJob then return false end
+    local now=Common.nowMs()
+    if lastJobProgressMs <= 0 or now-lastJobProgressMs < JOB_STALL_MS then return false end
+    activeJob.recoveries=(activeJob.recoveries or 0)+1
+    state="JOB:RECOVER "..activeJob.phase
+    lastJobProgressMs=now
+    saveJobState()
+    emitJobEvent("RECOVER", activeJob)
+    -- Overwrite any stale timer ID. If the original timer arrives later it is
+    -- ignored because the event loop only accepts the current jobTimer ID.
+    scheduleJobStep(JOB_MIN_DELAY)
+    return true
 end
 
 local function perform(command, args, requestId)
     args=type(args)=="table" and args or {}
     if activeJob then
         if command=="job_cancel" or command=="hold" then return requestJobReturn("OPERATOR_ABORT") end
-        if command~="update" then return false, "job_active" end
+        return false, "job_active"
     end
     if rtbActive and command~="hold" and command~="set_home" and command~="update" then return false,"rtb_active" end
     autoRefuel()
@@ -463,8 +602,12 @@ local function perform(command, args, requestId)
         ok,err=fn()
     elseif command=="breach" then
         local detected=false; pcall(function() detected=turtle.detect() end)
-        if detected then local t,e=ensureTool("pickaxe"); if not t then return false,e end; local d,de=turtle.dig(); if not d then return false,tostring(de or "dig_failed") end
-        else local t=ensureTool("sword"); if t then pcall(turtle.attack) end end
+        if detected then
+            local t,e=ensureTool("pickaxe"); if not t then return false,e end
+            local d,de=turtle.dig(); if not d then return false,tostring(de or "dig_failed") end
+        else
+            local t=ensureTool("sword"); if t then pcall(turtle.attack) end
+        end
         ok,err=move("forward")
     elseif command=="job_tunnel_roundtrip" then return startTunnelJob(args, requestId)
     elseif command=="job_cancel" then return requestJobReturn("OPERATOR_ABORT")
@@ -473,14 +616,17 @@ local function perform(command, args, requestId)
         rtbActive=true; rtbReason="OPERATOR"; state="RTB"; return true,"rtb_started"
     elseif command=="hold" then rtbActive=false; state="HOLD"; return true,"hold"
     elseif command=="set_home" then
-        config.homeNav={x=navPosition.x,y=navPosition.y,z=navPosition.z,frame=navPosition.frame}; saveConfig(); poseDirty=false; return true,"home_set"
+        config.homeNav={x=navPosition.x,y=navPosition.y,z=navPosition.z,frame=navPosition.frame}
+        saveConfig(); poseDirty=false; return true,"home_set"
     elseif command=="set_pose" then
         local x,y,z=tonumber(args.x),tonumber(args.y),tonumber(args.z)
         local heading=HEADINGS[string.upper(tostring(args.heading or ""))]
         if not x or not y or not z or heading==nil then return false,"bad_pose" end
-        navPosition={x=x,y=y,z=z,frame=tostring(args.frame or config.fleetId)}; config.heading=heading; poseDirty=true; saveConfig(); poseDirty=false; return true,"pose_set"
+        navPosition={x=x,y=y,z=z,frame=tostring(args.frame or config.fleetId)}
+        config.heading=heading; poseDirty=true; saveConfig(); poseDirty=false; return true,"pose_set"
     elseif command=="update" then
-        local f=fs.open(FORCE_UPDATE_PATH,"w"); if f then f.write(VERSION); f.close() end
+        local f=fs.open(FORCE_UPDATE_PATH,"w")
+        if f then f.write(VERSION); f.close() end
         return true,"update_reboot_scheduled"
     else return false,"unknown_command" end
     if ok then checkLowFuel() end
@@ -488,7 +634,10 @@ local function perform(command, args, requestId)
 end
 
 local function sendResult(packet,payload,ok,detail)
-    send("result",packet.origin,{requestId=payload.requestId,command=payload.command,ok=ok,detail=detail,unit=os.getComputerID(),state=state})
+    send("result",packet.origin,{
+        requestId=payload.requestId,command=payload.command,ok=ok,detail=detail,
+        unit=os.getComputerID(),state=state,job=jobPayload()
+    })
 end
 
 local function acceptCommand(packet)
@@ -534,7 +683,9 @@ end
 local function draw()
     local w,h=term.getSize()
     term.setBackgroundColor(colors.black); term.setTextColor(colors.white); term.clear()
-    term.setCursorPos(1,1); term.setBackgroundColor(config.role=="RELAY" and colors.blue or colors.red); term.write(string.rep(" ",w)); term.setCursorPos(2,1); term.write("BASE FLEET "..config.role)
+    term.setCursorPos(1,1)
+    term.setBackgroundColor(config.role=="RELAY" and colors.blue or colors.red)
+    term.write(string.rep(" ",w)); term.setCursorPos(2,1); term.write("BASE FLEET "..config.role)
     term.setBackgroundColor(colors.black); term.setTextColor(colors.white)
     local fuel=select(1,fuelSnapshot())
     local caps=capabilitySnapshot()
@@ -544,16 +695,21 @@ local function draw()
         string.format("NAV %.0f %.0f %.0f H:%s",navPosition.x,navPosition.y,navPosition.z,HEADING_NAMES[config.heading]),
         "Fuel: "..tostring(fuel or "?"),
         string.format("A%s D%s JOB%s R%s",caps.melee and "+" or "-",caps.dig and "+" or "-",caps.jobs and "+" or "-",caps.relay and "+" or "-"),
-        activeJob and string.format("Job %s %s %d/%d",activeJob.type,activeJob.phase,activeJob.phase=="OUT" and activeJob.outbound or activeJob.returned,activeJob.phase=="OUT" and activeJob.distance or activeJob.outbound) or "Job: none",
+        activeJob and string.format("Job %s %s %d/%d R:%d",activeJob.type,activeJob.phase,activeJob.phase=="OUT" and activeJob.outbound or activeJob.returned,activeJob.phase=="OUT" and activeJob.distance or activeJob.outbound,activeJob.recoveries or 0) or "Job: none",
         config.homeNav and string.format("Home %.0f %.0f %.0f",config.homeNav.x,config.homeNav.y,config.homeNav.z) or "Home: not set",
         "v"..VERSION.." Fleet:"..config.fleetId
     }
-    for i,text in ipairs(lines) do if i+2<=h then term.setCursorPos(1,i+2); term.write(tostring(text):sub(1,w)) end end
+    for i,text in ipairs(lines) do
+        if i+2<=h then term.setCursorPos(1,i+2); term.write(tostring(text):sub(1,w)) end
+    end
 end
 
 if #Common.openModems()==0 then error("No wireless modem found",0) end
-autoRefuel(); draw()
-local statusInterval=config.role=="RELAY" and 2.0 or 5.0
+autoRefuel()
+restoreJobState()
+draw()
+
+local baseStatusInterval=config.role=="RELAY" and 2.0 or 5.0
 local statusTimer=os.startTimer(0.2+math.random()*0.8)
 local rtbTimer=os.startTimer(0.4)
 local recoveryTimer=os.startTimer(LINK_RECOVERY_SECONDS)
@@ -566,6 +722,7 @@ while true do
     elseif event=="timer" and a==jobTimer then
         jobStep()
     elseif event=="timer" and a==statusTimer then
+        recoverStalledJob()
         autoRefuel(); checkLowFuel()
         local fuel,fuelLimit=fuelSnapshot()
         send("status","*",{
@@ -574,20 +731,31 @@ while true do
             heading=HEADING_NAMES[config.heading],homeNav=config.homeNav,capabilities=capabilitySnapshot(),rtb=rtbActive,rtbReason=rtbReason,
             job=jobPayload(),version=VERSION
         })
-        statusTimer=os.startTimer(statusInterval+math.random()*0.8); draw()
+        local interval=activeJob and 2.5 or baseStatusInterval
+        statusTimer=os.startTimer(interval+math.random()*0.6)
+        draw()
     elseif event=="timer" and a==rtbTimer then
         rtbStep(); rtbTimer=os.startTimer(0.4)
     elseif event=="timer" and a==recoveryTimer then
         Common.openModems()
-        if everLinked and Common.nowMs()-lastValidMesh>LINK_REBOOT_MS and not activeJob then linkState="REBOOT_RECOVERY"; draw(); sleep(0.2); os.reboot()
-        elseif lastValidMesh==0 or Common.nowMs()-lastValidMesh>15000 then linkState="SEARCHING" else linkState="ONLINE" end
+        if everLinked and Common.nowMs()-lastValidMesh>LINK_REBOOT_MS and not activeJob then
+            linkState="REBOOT_RECOVERY"; draw(); sleep(0.2); os.reboot()
+        elseif lastValidMesh==0 or Common.nowMs()-lastValidMesh>15000 then
+            linkState="SEARCHING"
+        else
+            linkState="ONLINE"
+        end
         recoveryTimer=os.startTimer(LINK_RECOVERY_SECONDS)
     elseif event=="timer" and a==checkpointTimer then
-        if poseDirty then saveConfig(); poseDirty=false end
+        if poseDirty and not activeJob then saveConfig(); poseDirty=false end
         checkpointTimer=os.startTimer(2)
     elseif event=="peripheral" or event=="peripheral_detach" then
         Common.openModems()
     elseif event=="key" and a==keys.leftShift then
-        if activeJob then requestJobReturn("LOCAL_STOP") else state="STOPPED"; if poseDirty then saveConfig() end; draw(); return end
+        if activeJob then
+            requestJobReturn("LOCAL_STOP")
+        else
+            state="STOPPED"; if poseDirty then saveConfig() end; draw(); return
+        end
     end
 end
