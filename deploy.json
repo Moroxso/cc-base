@@ -1,11 +1,11 @@
 {
   "schema": 2,
-  "version": "0.23.0-alpha.4",
-  "sourceCommit": "a7090947a5cb70bc1c6a8390382072966f8f5789",
+  "version": "0.23.0-alpha.4.1",
+  "sourceCommit": "d7563f3ecc0e1a0c45df6942f092f564919a6f9e",
   "hashAlgorithm": "git-blob-sha1",
   "files": [
     {"source":"deploy.json","target":"deploy.json","control":"manifest"},
-    {"source":"packages.json","target":"packages.json","size":7062,"hash":"586f17b84e2c14a797f3e41e9f73e303d7b84d90"},
+    {"source":"packages.json","target":"packages.json","size":7068,"hash":"741b4daef0fcf46464cb1caacfd394a382df3f4c"},
     {"source":"src/startup.lua","target":"startup.lua","size":1054,"hash":"7e6758a09ddcd4ea2954785cc0b8a4ad3c71d8f9","bootstrapProtected":true},
     {"source":"src/main.lua","target":"main.lua","size":12574,"hash":"994fea3ef96fa346e374a808a4728e1502096144"},
     {"source":"src/update.lua","target":"update.lua","size":2571,"hash":"7c4312052b866deab5bec02d18923e11283e32de","bootstrapProtected":true},
@@ -64,10 +64,10 @@
     {"source":"src/apps/explorer.lua","target":"apps/explorer.lua","size":14548,"hash":"29558acbf029a00ad21ad6773ece6c4553f022a5"},
     {"source":"src/apps/defense.lua","target":"apps/defense.lua","size":11794,"hash":"d5c3c63d50f407ae2c0a24dbd7b0114cd6ff46ed"},
     {"source":"src/pocket/fleet_control.lua","target":"pocket/fleet_control.lua","size":11376,"hash":"1f0c3f351f57e2b4066a79e94c02c747e32a91ec"},
-    {"source":"src/pocket/fleet_jobs.lua","target":"pocket/fleet_jobs.lua","size":8592,"hash":"eb00b499294a48d789efb4875a12af0cf07f23f2"},
-    {"source":"src/pocket/pocket_os.lua","target":"pocket/pocket_os.lua","size":3984,"hash":"1749ee25a1f618fa63ca475bc763a27637fbfd31"},
+    {"source":"src/pocket/fleet_jobs.lua","target":"pocket/fleet_jobs.lua","size":11744,"hash":"7c069fec109c21b96de76ee7c08597f047efeef1"},
+    {"source":"src/pocket/pocket_os.lua","target":"pocket/pocket_os.lua","size":3986,"hash":"f06830a99da16f105f8970a2063bcd3f41996c50"},
     {"source":"src/pocket/pocket_startup.lua","target":"pocket/pocket_startup.lua","size":162,"hash":"cc8f6a7745f4f78caf685165b2a88fa56bd95c61"},
-    {"source":"src/turtle/assault_agent.lua","target":"turtle/assault_agent.lua","size":26459,"hash":"8114c7eba6d22879679423a74c69e7d85348647e"},
+    {"source":"src/turtle/assault_agent.lua","target":"turtle/assault_agent.lua","size":31660,"hash":"0272b400ba13e2192611cfd51215609089dab577"},
     {"source":"src/turtle/defense_agent.lua","target":"turtle/defense_agent.lua","size":21031,"hash":"6bea1037a4ae8374cbaf59d30b67c7d4d9834bf3"}
   ],
   "remove": []
