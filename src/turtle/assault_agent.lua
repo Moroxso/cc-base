@@ -472,7 +472,6 @@ end
 local function markJobProgress()
     lastJobProgressMs=Common.nowMs()
     saveJobState()
-    requestStatusSoon(0)
 end
 
 local function finishJob(success, reason)
@@ -495,6 +494,7 @@ local function switchJobToReturn(reason)
     state="JOB:RETURN"
     markJobProgress()
     emitJobEvent("RETURN", activeJob)
+    requestStatusSoon(0)
     wakeJobWorker()
 end
 
@@ -546,6 +546,7 @@ local function requestJobReturn(reason)
     state="JOB:RETURN"
     markJobProgress()
     emitJobEvent("RETURN", activeJob)
+    requestStatusSoon(0)
     wakeJobWorker()
     return true, "returning"
 end
