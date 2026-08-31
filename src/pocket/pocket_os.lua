@@ -1,4 +1,4 @@
-local VERSION = "0.23.0-alpha.4"
+local VERSION = "0.23.0-alpha.4.1"
 local RUNTIME_PATH = "/data/fleet_runtime.json"
 local LEGACY_STARTUP = "/data/pocketbase_legacy_startup.lua"
 
