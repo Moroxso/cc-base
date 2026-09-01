@@ -1,4 +1,4 @@
-local VERSION = "0.23.0-alpha.4.2"
+local VERSION = "0.23.0-alpha.5"
 local RUNTIME_PATH = "/data/fleet_runtime.json"
 local LEGACY_STARTUP = "/data/pocketbase_legacy_startup.lua"
 local CONFIG_PATH = "/data/fleet_operator.json"
@@ -26,6 +26,13 @@ local function line(y,text,color)
     term.write(tostring(text):sub(1,w))
 end
 
+local function transportMode()
+    local cfg=readJson(CONFIG_PATH)
+    local mode=string.upper(tostring(cfg and cfg.transportMode or "AUTO"))
+    if mode~="DIRECT" and mode~="MESH" then mode="AUTO" end
+    return mode
+end
+
 local function systemInfo()
     term.setBackgroundColor(colors.black)
     term.setTextColor(colors.white)
@@ -38,6 +45,7 @@ local function systemInfo()
     print("Free: "..tostring(fs.getFreeSpace("/")))
     local runtime=readJson(RUNTIME_PATH)
     print("Fleet runtime: "..tostring(runtime and runtime.version or "unknown"))
+    print("Transport: "..transportMode())
     local names={}
     for _,name in ipairs(peripheral.getNames()) do
         local ok,t=pcall(peripheral.getType,name)
@@ -82,6 +90,9 @@ end
 local items={
     {name="Fleet Control",run=function() runProgram("/fleet_control.lua") end},
     {name="Fleet Jobs",run=function() runProgram("/fleet_jobs.lua") end},
+    {name="Fleet Scheduler",run=function()
+        if fs.exists("/fleet_scheduler.lua") then runProgram("/fleet_scheduler.lua") else print("fleet_scheduler.lua missing"); sleep(2) end
+    end},
     {name="Fleet Update",run=updateSelf},
     {name="System Info",run=systemInfo},
     {name="Shell",run=function() runProgram("shell") end},
@@ -106,7 +117,7 @@ local function draw()
     term.setCursorPos(2,1)
     term.setTextColor(colors.white)
     term.write("BASE POCKET")
-    line(2,"v"..VERSION.."  #"..os.getComputerID(),colors.lightGray)
+    line(2,"v"..VERSION.."  #"..os.getComputerID().." "..transportMode(),colors.lightGray)
 
     local first=4
     local visible=math.max(1,h-6)
@@ -164,6 +175,14 @@ local function fleetServiceLoop()
     local mesh={bootId=Common.randomHex(12),seq=0}
     local seen=Common.newSeenCache()
 
+    local function currentMode()
+        local latest=readJson(CONFIG_PATH)
+        local mode=string.upper(tostring(latest and latest.transportMode or config.transportMode or "AUTO"))
+        if mode~="DIRECT" and mode~="MESH" then mode="AUTO" end
+        config.transportMode=mode
+        return mode
+    end
+
     local function sendPacket(kind,target,payload,ttl)
         local packet,err=Common.newPacket(config,mesh,kind,target,payload,ttl)
         if not packet then return false,err end
@@ -178,7 +197,7 @@ local function fleetServiceLoop()
         local id=Common.packetId(packet)
         if Common.seen(seen,id) then return end
         Common.markSeen(seen,id)
-        if config.relay and packet.ttl>0 then
+        if currentMode()=="MESH" and config.relay and packet.ttl>0 then
             local forwarded=Common.forwardPacket(packet,config.key)
             if forwarded then Common.broadcast(forwarded) end
         end
@@ -195,12 +214,16 @@ local function fleetServiceLoop()
             handlePacket(b,c)
         elseif e=="timer" and a==beacon then
             if not servicePaused then
-                sendPacket("operator_status","*",{operator=os.getComputerID(),app="pocket_os",version=VERSION})
+                local mode=currentMode()
+                local ttl=mode=="MESH" and Common.DEFAULT_TTL or 0
+                sendPacket("operator_status","*",{operator=os.getComputerID(),app="pocket_os",version=VERSION,transport=mode},ttl)
             end
             beacon=os.startTimer(4)
         elseif e=="timer" and a==discover then
             if not servicePaused then
-                sendPacket("discover","*",{operator=os.getComputerID(),app="pocket_os",version=VERSION})
+                local mode=currentMode()
+                local ttl=mode=="MESH" and Common.DEFAULT_TTL or 0
+                sendPacket("discover","*",{operator=os.getComputerID(),app="pocket_os",version=VERSION,transport=mode},ttl)
             end
             discover=os.startTimer(12)
         elseif e=="timer" and a==recovery then
@@ -210,7 +233,9 @@ local function fleetServiceLoop()
             Common.openModems()
         elseif e=="pocket_service_wake" then
             if not servicePaused then
-                sendPacket("discover","*",{operator=os.getComputerID(),app="pocket_os",version=VERSION})
+                local mode=currentMode()
+                local ttl=mode=="MESH" and Common.DEFAULT_TTL or 0
+                sendPacket("discover","*",{operator=os.getComputerID(),app="pocket_os",version=VERSION,transport=mode},ttl)
             end
         end
     end
