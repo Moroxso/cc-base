@@ -1,4 +1,4 @@
-local VERSION = "0.23.0-alpha.5"
+local VERSION = "0.23.0-alpha.5.3"
 local RUNTIME_PATH = "/data/fleet_runtime.json"
 local LEGACY_STARTUP = "/data/pocketbase_legacy_startup.lua"
 local CONFIG_PATH = "/data/fleet_operator.json"
@@ -92,6 +92,9 @@ local items={
     {name="Fleet Jobs",run=function() runProgram("/fleet_jobs.lua") end},
     {name="Fleet Scheduler",run=function()
         if fs.exists("/fleet_scheduler.lua") then runProgram("/fleet_scheduler.lua") else print("fleet_scheduler.lua missing"); sleep(2) end
+    end},
+    {name="Fleet Performance",run=function()
+        if fs.exists("/fleet_performance.lua") then runProgram("/fleet_performance.lua") else print("fleet_performance.lua missing"); sleep(2) end
     end},
     {name="Fleet Update",run=updateSelf},
     {name="System Info",run=systemInfo},
