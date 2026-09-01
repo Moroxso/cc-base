@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version": "0.23.0-alpha.5.3",
-  "sourceCommit": "94e9ed92a4ad332f4e0000e67ea7bcdd94f76cf6",
+  "version": "0.23.0-alpha.5.4",
+  "sourceCommit": "af2e8a920394d614d8ca52b39232509892b6b635",
   "hashAlgorithm": "git-blob-sha1",
   "profiles": {
     "assault": ["assault", "assault_core", "startup"],
     "relay": ["assault", "assault_core", "startup"],
-    "pocket": ["pocket_os", "pocket_control", "pocket_jobs", "pocket_scheduler", "pocket_performance", "pocket_startup"]
+    "pocket": ["pointer_host", "pocket_os", "pocket_control", "pocket_control_core", "pocket_jobs", "pocket_jobs_core", "pocket_scheduler", "pocket_scheduler_core", "pocket_performance", "pocket_performance_core", "pocket_startup"]
   },
   "files": {
     "common": {
@@ -14,6 +14,12 @@
       "target": "/lib/fleet/common.lua",
       "size": 11338,
       "hash": "f9f59711b65643c007ec98898cd6ffd3f0feae7e"
+    },
+    "pointer_host": {
+      "source": "src/lib/pocket/pointer_host.lua",
+      "target": "/lib/pocket/pointer_host.lua",
+      "size": 17825,
+      "hash": "f08cca86ae4466a356a86f5ac1244617b7126549"
     },
     "assault": {
       "source": "src/turtle/assault_agent_wrapper.lua",
@@ -28,34 +34,58 @@
       "hash": "cb46a699f000431508388d887f31eb44c07b66a0"
     },
     "pocket_control": {
-      "source": "src/pocket/fleet_control.lua",
+      "source": "src/pocket/fleet_control_pointer.lua",
       "target": "/fleet_control.lua",
+      "size": 95,
+      "hash": "ee61bd23f99c68f57b8a36935b2d2707b543e698"
+    },
+    "pocket_control_core": {
+      "source": "src/pocket/fleet_control.lua",
+      "target": "/fleet_control_core.lua",
       "size": 17542,
       "hash": "54b3adc7701ef222676f299c461bfdc291db62ff"
     },
     "pocket_jobs": {
-      "source": "src/pocket/fleet_jobs.lua",
+      "source": "src/pocket/fleet_jobs_pointer.lua",
       "target": "/fleet_jobs.lua",
+      "size": 89,
+      "hash": "a99e598dcc0bca41788f2566a76f045090bbb581"
+    },
+    "pocket_jobs_core": {
+      "source": "src/pocket/fleet_jobs.lua",
+      "target": "/fleet_jobs_core.lua",
       "size": 16923,
       "hash": "d3a37bf31c4147cae1e95f154028200c51e25090"
     },
     "pocket_scheduler": {
-      "source": "src/pocket/fleet_scheduler_v2.lua",
+      "source": "src/pocket/fleet_scheduler_pointer.lua",
       "target": "/fleet_scheduler.lua",
+      "size": 99,
+      "hash": "5e7845dbd8b76b470a76dd37a820aee4ff84a7b5"
+    },
+    "pocket_scheduler_core": {
+      "source": "src/pocket/fleet_scheduler_v2.lua",
+      "target": "/fleet_scheduler_core.lua",
       "size": 41971,
       "hash": "63e46958604f8c80ef4d9132e7af594c171cbc19"
     },
     "pocket_performance": {
-      "source": "src/pocket/fleet_performance.lua",
+      "source": "src/pocket/fleet_performance_pointer.lua",
       "target": "/fleet_performance.lua",
+      "size": 103,
+      "hash": "5af053f31c544f9df2a992ec0c8ec20b3c0e3b6b"
+    },
+    "pocket_performance_core": {
+      "source": "src/pocket/fleet_performance.lua",
+      "target": "/fleet_performance_core.lua",
       "size": 41957,
       "hash": "be3dff06bb2a6291ebf8e5eee33628d1493308f2"
     },
     "pocket_os": {
-      "source": "src/pocket/pocket_os.lua",
+      "source": "src/pocket/pocket_os_pointer.lua",
       "target": "/pocket_os.lua",
-      "size": 8738,
-      "hash": "8408c47791ebd99ef9f8212fbc4bf3b32c926ae5"
+      "size": 8956,
+      "hash": "53e3388b348ea39f97e54136b9758f21064f31c8"
     },
     "pocket_startup": {
       "source": "src/pocket/pocket_startup.lua",
