@@ -74,7 +74,6 @@ local cacheDirty=false
 local stateDirty=false
 local appRunning=true
 local message="Scheduler ready"
-local appStartedAt=Common.nowMs()
 
 local function loadCache()
     local raw=readJson(CACHE_PATH)
@@ -495,6 +494,12 @@ local function handlePacket(packet,protocol)
                 r.route=units[item.unitId] and units[item.unitId].route or item.lastRoute
                 if item.purpose=="START" and not p.ok and r.state=="DISPATCHED" then
                     finishRunUnit(item.unitId,false,tostring(p.detail or "start_rejected"))
+                elseif item.purpose=="CANCEL" and not p.ok and tostring(p.detail or "")=="no_active_job" then
+                    r.state="CANCELED"
+                    r.doneAt=now
+                    r.reason="cancel_no_active_job"
+                    stateDirty=true
+                    finalizeRun()
                 end
             end
         end
@@ -567,9 +572,9 @@ local function cancelRun()
     if not confirm("Cancel queued work and return active turtles?") then message="Cancel aborted"; return end
     currentRun.canceled=true
     for _,r in pairs(currentRun.units) do
-        if r.state=="QUEUED" or r.state=="DISPATCHED" then
+        if r.state=="QUEUED" then
             r.state="CANCELED"; r.doneAt=Common.nowMs(); r.reason="operator_cancel"
-        elseif r.state=="RUNNING" or r.state=="RETURN" or r.state=="STALLED" then
+        elseif r.state=="DISPATCHED" or r.state=="RUNNING" or r.state=="RETURN" or r.state=="STALLED" or r.state=="CANCELING" then
             r.state="CANCELING"
             issueToUnit("job_cancel",{},r.id,"CANCEL")
         end
