@@ -175,13 +175,14 @@ local function fleetServiceLoop()
     local mesh={bootId=Common.randomHex(12),seq=0}
     local seen=Common.newSeenCache()
 
-    local function currentMode()
+    local function refreshMode()
         local latest=readJson(CONFIG_PATH)
         local mode=string.upper(tostring(latest and latest.transportMode or config.transportMode or "AUTO"))
         if mode~="DIRECT" and mode~="MESH" then mode="AUTO" end
         config.transportMode=mode
         return mode
     end
+    refreshMode()
 
     local function sendPacket(kind,target,payload,ttl)
         local packet,err=Common.newPacket(config,mesh,kind,target,payload,ttl)
@@ -197,7 +198,7 @@ local function fleetServiceLoop()
         local id=Common.packetId(packet)
         if Common.seen(seen,id) then return end
         Common.markSeen(seen,id)
-        if currentMode()=="MESH" and config.relay and packet.ttl>0 then
+        if config.transportMode=="MESH" and config.relay and packet.ttl>0 then
             local forwarded=Common.forwardPacket(packet,config.key)
             if forwarded then Common.broadcast(forwarded) end
         end
@@ -214,14 +215,14 @@ local function fleetServiceLoop()
             handlePacket(b,c)
         elseif e=="timer" and a==beacon then
             if not servicePaused then
-                local mode=currentMode()
+                local mode=refreshMode()
                 local ttl=mode=="MESH" and Common.DEFAULT_TTL or 0
                 sendPacket("operator_status","*",{operator=os.getComputerID(),app="pocket_os",version=VERSION,transport=mode},ttl)
             end
             beacon=os.startTimer(4)
         elseif e=="timer" and a==discover then
             if not servicePaused then
-                local mode=currentMode()
+                local mode=refreshMode()
                 local ttl=mode=="MESH" and Common.DEFAULT_TTL or 0
                 sendPacket("discover","*",{operator=os.getComputerID(),app="pocket_os",version=VERSION,transport=mode},ttl)
             end
@@ -233,7 +234,7 @@ local function fleetServiceLoop()
             Common.openModems()
         elseif e=="pocket_service_wake" then
             if not servicePaused then
-                local mode=currentMode()
+                local mode=refreshMode()
                 local ttl=mode=="MESH" and Common.DEFAULT_TTL or 0
                 sendPacket("discover","*",{operator=os.getComputerID(),app="pocket_os",version=VERSION,transport=mode},ttl)
             end
