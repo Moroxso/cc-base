@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "version": "0.23.0-alpha.5.4",
-  "sourceCommit": "af2e8a920394d614d8ca52b39232509892b6b635",
+  "version": "0.23.0-alpha.5.4.1",
+  "sourceCommit": "eeade23d706cafaa905f3ebc88b2c1f37a17bf4c",
   "hashAlgorithm": "git-blob-sha1",
   "profiles": {
     "assault": ["assault", "assault_core", "startup"],
@@ -16,10 +16,10 @@
       "hash": "f9f59711b65643c007ec98898cd6ffd3f0feae7e"
     },
     "pointer_host": {
-      "source": "src/lib/pocket/pointer_host.lua",
+      "source": "src/lib/pocket/pointer_host_v2.lua",
       "target": "/lib/pocket/pointer_host.lua",
-      "size": 17825,
-      "hash": "f08cca86ae4466a356a86f5ac1244617b7126549"
+      "size": 14965,
+      "hash": "889669dfb9bde81c81b6ebb28fd465642e24e278"
     },
     "assault": {
       "source": "src/turtle/assault_agent_wrapper.lua",
@@ -82,10 +82,10 @@
       "hash": "be3dff06bb2a6291ebf8e5eee33628d1493308f2"
     },
     "pocket_os": {
-      "source": "src/pocket/pocket_os_pointer.lua",
+      "source": "src/pocket/pocket_os_pointer_v2.lua",
       "target": "/pocket_os.lua",
-      "size": 8956,
-      "hash": "53e3388b348ea39f97e54136b9758f21064f31c8"
+      "size": 10565,
+      "hash": "ef19a2a605059cff05559e89c778518739ad02ae"
     },
     "pocket_startup": {
       "source": "src/pocket/pocket_startup.lua",
