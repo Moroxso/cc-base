@@ -1,6 +1,6 @@
 # BASE Project State
 
-Last synchronized release target: `0.23.0-alpha.5.4.1`.
+Last synchronized release target: `0.23.0-alpha.5.4.2`.
 
 Canonical priority when information conflicts:
 
@@ -34,7 +34,7 @@ Defense Foundation exists. Fleet was expanded substantially:
 - Scheduler and load governor;
 - performance benchmarking/profile;
 - pointer-first Fleet UI host in alpha5.4;
-- pointer-launch diagnostics/hardening in alpha5.4.1.
+- pointer launch diagnostics/hardening in alpha5.4.1/.5.4.2.
 
 ## Current Fleet field status
 
@@ -44,9 +44,11 @@ Defense Foundation exists. Fleet was expanded substantially:
 
 `0.23.0-alpha.5.2/.5.3` added delay/concurrency benchmarking and an accumulated performance profile. Latest observed 18-unit profile favors delay `0.15` and AUTO concurrency; the sample confidence is still low and must not be promoted to a permanent constant.
 
-`0.23.0-alpha.5.4` introduced pointer wrappers around unchanged Fleet cores. Field testing showed the BASE Pocket main menu received clicks and selected rows, but wrapped applications immediately returned without a visible error. This proves pointer input reached the menu and isolates the failure to the launch/wrapper path rather than mouse-event delivery.
+`0.23.0-alpha.5.4` introduced pointer wrappers around unchanged Fleet cores. Field testing showed the BASE Pocket main menu received clicks and selected rows, but wrapped applications immediately returned without a visible error. This proved pointer input reached the menu and isolated the failure to the launch/wrapper path rather than mouse-event delivery.
 
-`0.23.0-alpha.5.4.1` hardens that launch path: pointer host uses a terminal proxy with `__index=term` instead of a shallow term-table copy, launches trusted Fleet cores through `os.run(env, path)`, and persists pointer/launch diagnostics. Pocket OS no longer discards a `shell.run()==false` result.
+`0.23.0-alpha.5.4.1` made failed `shell.run()` launches visible. Field testing then showed `/fleet_control.lua` returning false, while both diagnostic files remained empty. The remaining failure is consistent with the wrapped core being launched in a custom environment without the program-local `require/package` setup normally provided by CC:Tweaked.
+
+`0.23.0-alpha.5.4.2` restores a complete trusted program environment for wrapped Fleet cores using `cc.require.make(env, dir)`, explicitly carries `shell`, and uses an absolute pointer-host loader so wrapper startup does not depend on module search paths. It also provides a `writeLine` compatibility layer over `write` for Polymania file handles so diagnostics cannot silently truncate to empty files for that reason. Stable Fleet core/job/network logic remains unchanged.
 
 ## Polymania/server observations
 
@@ -68,6 +70,7 @@ Defense Foundation exists. Fleet was expanded substantially:
 - Do not update an active turtle job.
 - Preserve `/data` during updates.
 - For pointer UI failures, inspect `/data/pointer_ui_error.log` and `/data/pocket_launch_error.log` before changing Fleet cores.
+- Custom trusted-program environments that use `require` must construct `require/package` with `cc.require.make`; inheriting only `_G` is insufficient.
 
 ## Open technical debt
 
@@ -89,13 +92,14 @@ Defense Foundation exists. Fleet was expanded substantially:
 
 ## Immediate roadmap
 
-### 0.23.0-alpha.5.4.1 — Pointer launch hotfix
+### 0.23.0-alpha.5.4.2 — Pointer program-environment hotfix
 
 - preserve clickable BASE Pocket menu;
-- propagate application launch failure instead of silently returning;
-- terminal proxy inherits the live `term` API rather than shallow-copying it;
-- run trusted Fleet cores through `os.run(env, path)`;
-- persist pointer/launch diagnostics under `/data`;
+- absolute-load pointer host from wrappers;
+- install pointer host core separately;
+- construct `require/package` with `cc.require.make` for wrapped trusted Fleet programs;
+- carry `shell`/program globals needed by existing cores;
+- compatibility `writeLine` implementation for diagnostic writes;
 - no Fleet worker/job/network semantics changes.
 
 ### 0.23.0-alpha.6 — Industrial Fleet
