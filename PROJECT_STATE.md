@@ -1,6 +1,6 @@
 # BASE Project State
 
-Last synchronized release target: `0.23.0-alpha.5.4.3.1`.
+Last synchronized release target: `0.23.0-alpha.5.4.4`.
 
 Canonical priority when information conflicts:
 
@@ -36,9 +36,13 @@ Defense Foundation exists. Fleet now includes signed mesh/common protocol, Pocke
 
 `0.23.0-alpha.5.4.2` restored a complete trusted CC program environment for wrapped cores using `cc.require.make(env, dir)`, absolute host loading and Polymania file-handle compatibility. Field testing confirmed all Fleet menus launch correctly in this version.
 
-`0.23.0-alpha.5.4.3` attempted keyboard-focus navigation by proxying `os.pullEvent` and capturing navigation events before the legacy cores. Field testing immediately regressed all Fleet wrappers to `shell.run returned false`. Because the failure affects all four wrappers while the same cores work under alpha5.4.2, the regression is isolated to the new pointer-host/event interception layer. The exact runtime error must be read from the persistent pointer diagnostic before another navigation implementation is promoted.
+`0.23.0-alpha.5.4.3` attempted keyboard-focus navigation by proxying `os.pullEvent` and capturing navigation events before the legacy cores. Field testing immediately regressed all Fleet wrappers to `shell.run returned false`. Persistent diagnostics show the failure occurs inside `pointer_host_core` at `host_run`, before the unchanged Fleet core becomes the distinguishing factor.
 
-`0.23.0-alpha.5.4.3.1` is an immediate production rollback: the Fleet manifest points back to the exact field-verified alpha5.4.2 pointer host/core and payload while preserving `/data` diagnostics. Keyboard focus is therefore temporarily removed; pointer/touch remains the production UI until the regression is diagnosed exactly.
+Code inspection found a deterministic Polymania compatibility hazard introduced only in alpha5.4.3: the navigation core constructs a keyed table containing `[keys.escape] = true`. If this port/device does not expose `keys.escape`, Lua raises `table index is nil` immediately. Alpha5.4.2 referenced Escape only as an ordinary value and therefore did not trigger the same initialization failure. The terminal screenshot truncates the error suffix, so this remains a strongly supported root-cause diagnosis rather than a verbatim field error string.
+
+`0.23.0-alpha.5.4.3.1` restored the exact field-verified alpha5.4.2 pointer payload while retaining diagnostics.
+
+`0.23.0-alpha.5.4.4` reintroduces keyboard-focus navigation through a compatibility loader layered over the working alpha5.4.2 host. The loader supplies a local non-nil Escape sentinel only when `keys.escape` is unavailable, without mutating global `keys`, then loads the existing navigation core. This isolates the key-API compatibility fix from Fleet cores and from the proven program-environment launch path.
 
 ## Polymania/server observations
 
@@ -50,6 +54,7 @@ Defense Foundation exists. Fleet now includes signed mesh/common protocol, Pocke
 - Turtle dig works on own/allied territory but is blocked by enemy/private claim protection.
 - Turtle place behavior in hostile claims remains unconfirmed.
 - No additional entity sensor peripheral is currently available.
+- Optional `keys.*` constants must not be assumed present on every Polymania device/runtime; guard them before using them as Lua table keys.
 
 ## Current production recommendations
 
@@ -61,7 +66,7 @@ Defense Foundation exists. Fleet now includes signed mesh/common protocol, Pocke
 - Preserve `/data` during updates.
 - For pointer UI failures, inspect `/data/pointer_ui_error.log` and `/data/pocket_launch_error.log` before changing Fleet cores.
 - Custom trusted environments using `require` must construct `require/package` with `cc.require.make`; inheriting only `_G` is insufficient.
-- Do not reintroduce global event interception for keyboard navigation until the alpha5.4.3 failure is diagnosed from a concrete field log.
+- Optional key constants must be validated before using them as keyed-table indexes or synthetic key codes.
 
 ## Open technical debt
 
@@ -79,21 +84,19 @@ Defense Foundation exists. Fleet now includes signed mesh/common protocol, Pocke
 12. Global/interdimensional modem delivery implementation remains unknown.
 13. Router/firewall/DDoS GlobalNet design is planned, not implemented.
 14. RISC-V VM details are unknown and must not be guessed.
-15. Keyboard-focus navigation for pointer panels is currently rolled back pending exact diagnosis.
+15. Keyboard-focus navigation in alpha5.4.4 still requires field verification on Pocket and ordinary Polymania computers.
 
 ## Immediate roadmap
 
-### 0.23.0-alpha.5.4.3.1 — Pointer rollback
+### 0.23.0-alpha.5.4.4 — Safe-key pointer navigation
 
-- restore exact alpha5.4.2 pointer host/core;
-- keep pointer/touch controls working;
-- preserve diagnostic files under `/data`;
-- collect the concrete alpha5.4.3 pointer error before redesigning keyboard focus;
-- no Fleet worker/job/network semantics changes.
-
-### Follow-up pointer navigation
-
-Implement arrow navigation with the smallest possible change after the field error is known. Avoid intercepting all core event pulls unless proven necessary. Fleet Control must still prevent a navigation arrow from simultaneously issuing movement.
+- retain the exact field-verified alpha5.4.2 outer pointer host;
+- install a small compatibility loader as `/lib/pocket/pointer_host_core.lua`;
+- install the alpha5.4.3 navigation implementation separately as `/lib/pocket/pointer_host_core_nav.lua`;
+- provide a local Escape sentinel only when `keys.escape` is unavailable;
+- preserve mouse/touch operation and numeric forms;
+- retain arrow-focus/Enter activation without changing Fleet worker/job/network semantics;
+- keep diagnostics under `/data`.
 
 ### 0.23.0-alpha.6 — Industrial Fleet
 
