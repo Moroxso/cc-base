@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version": "0.23.0-alpha.5.4.3.1",
-  "sourceCommit": "2c7bff46de1a5ce6d33a3d87351b8dededf1b5e7",
+  "version": "0.23.0-alpha.5.4.4",
+  "sourceCommit": "7fb03e350a255d4a1dd5923e299e646aa0cb5886",
   "hashAlgorithm": "git-blob-sha1",
   "profiles": {
     "assault": ["assault", "assault_core", "startup"],
     "relay": ["assault", "assault_core", "startup"],
-    "pocket": ["pointer_host", "pointer_host_core", "pocket_os", "pocket_control", "pocket_control_core", "pocket_jobs", "pocket_jobs_core", "pocket_scheduler", "pocket_scheduler_core", "pocket_performance", "pocket_performance_core", "pocket_startup"]
+    "pocket": ["pointer_host", "pointer_host_core", "pointer_host_core_nav", "pocket_os", "pocket_control", "pocket_control_core", "pocket_jobs", "pocket_jobs_core", "pocket_scheduler", "pocket_scheduler_core", "pocket_performance", "pocket_performance_core", "pocket_startup"]
   },
   "files": {
     "common": {
@@ -22,10 +22,16 @@
       "hash": "8c78229efd40cbeaf72db97d0ac0829a77138963"
     },
     "pointer_host_core": {
-      "source": "src/lib/pocket/pointer_host_v2.lua",
+      "source": "src/lib/pocket/pointer_host_core_compat_v4.lua",
       "target": "/lib/pocket/pointer_host_core.lua",
-      "size": 14965,
-      "hash": "889669dfb9bde81c81b6ebb28fd465642e24e278"
+      "size": 1925,
+      "hash": "de3bb8b9bcd890c4e01b0ffbb7b33b8e06010729"
+    },
+    "pointer_host_core_nav": {
+      "source": "src/lib/pocket/pointer_host_core_v3.lua",
+      "target": "/lib/pocket/pointer_host_core_nav.lua",
+      "size": 19653,
+      "hash": "f95a2dbe3b3dc9d6d59154d24d7ff6d96f433a1c"
     },
     "assault": {
       "source": "src/turtle/assault_agent_wrapper.lua",
