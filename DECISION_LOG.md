@@ -71,3 +71,9 @@ From alpha5.4.1, Pocket surfaces failed application launches and persists diagno
 Alpha5.4.1 still launched wrapped Fleet cores with a custom environment that inherited `_G` but did not recreate the program-local `require/package` service. Field testing produced `shell.run returned false`, while the core's first statement requires `lib.fleet.common`. This is the same class of environment issue previously seen in updater work.
 
 From alpha5.4.2, wrapped trusted Fleet cores receive `require` and `package` from `cc.require.make(env, dir)`, plus the caller's `shell` where available. Pointer wrappers load the host from an absolute path rather than relying on module search-path behavior. Diagnostic file writes also provide a `writeLine` compatibility layer over `write` for ports whose file handles differ from upstream CC:Tweaked.
+
+## D017 — Arrow keys navigate UI focus before legacy Fleet actions
+
+From alpha5.4.3, Fleet pointer panels support visible keyboard focus. In normal and confirmation screens, physical arrow keys move focus and `Enter` activates the focused option. The pointer host captures these navigation events before the unchanged legacy core sees them, then emits a synthetic legacy action only after activation. This prevents one key press from both navigating the UI and accidentally executing a Fleet command.
+
+For Fleet Control this intentionally changes physical arrow semantics: arrows select the `Forward/Back/Left/Right` controls rather than moving a turtle immediately. A movement command occurs only after `Enter` or pointer activation. Numeric-entry screens remain different: left/right continue to adjust the current value directly, while Enter/Escape accept/default it.
