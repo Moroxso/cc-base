@@ -54,26 +54,22 @@ A server RISC-V VM is planned but specifications are unavailable. BASE should fi
 
 ## D013 — Pointer-first local UI on Polymania
 
-Pocket and ordinary-computer keyboard interaction is cumbersome in the current port. Starting with 0.23.0-alpha.5.4, Fleet applications use a shared pointer host: legacy/tested cores run in a child window and a clickable control panel handles mouse/touch input and numeric forms. Keyboard controls remain fallback. This avoids rewriting stable Fleet runtime logic solely for presentation changes.
+Pocket and ordinary-computer keyboard interaction is cumbersome in the current port. Fleet applications use a shared pointer host: tested cores run in a child window and a clickable control panel handles mouse/touch input and numeric forms. Keyboard controls remain fallback where safe.
 
 ## D014 — Keep project-context docs in `main`
 
-The prior architecture/state/rules/decision documents lived on an old `docs/project-context-0.20.4.2` branch and became stale. From alpha5.4 onward the four reference Markdown files are maintained in `main` and updated with releases that materially change assumptions or verified state.
+The prior architecture/state/rules/decision documents lived on an old `docs/project-context-0.20.4.2` branch and became stale. Current reference Markdown files are maintained in `main` and updated with releases that materially change assumptions or verified state.
 
 ## D015 — Pointer failures must be observable
 
-Alpha5.4 field testing showed clicks selecting BASE Pocket menu rows while wrapped Fleet applications immediately returned. The menu only changes selection inside `activate()`, so this proved pointer events reached the menu and the failure occurred after activation. The old code also discarded `shell.run()==false`, hiding runtime errors.
-
-From alpha5.4.1, Pocket surfaces failed application launches and persists diagnostics. The pointer host also uses a proxy inheriting the live `term` API instead of shallow-copying it. This use remains limited to trusted Fleet cores; D001 still forbids treating the execution environment as a sandbox/security boundary.
+Alpha5.4 field testing showed clicks selecting BASE Pocket menu rows while wrapped Fleet applications immediately returned. The old code discarded `shell.run()==false`, hiding runtime errors. Pocket must surface failed launches and preserve diagnostics under `/data`.
 
 ## D016 — Custom trusted program environments must recreate CC program services
 
-Alpha5.4.1 still launched wrapped Fleet cores with a custom environment that inherited `_G` but did not recreate the program-local `require/package` service. Field testing produced `shell.run returned false`, while the core's first statement requires `lib.fleet.common`. This is the same class of environment issue previously seen in updater work.
+Alpha5.4.1 launched wrapped Fleet cores in a custom environment without the program-local `require/package` service. Alpha5.4.2 fixed this by creating `require` and `package` through `cc.require.make(env, dir)`, carrying `shell`, using absolute host loading, and providing file-handle compatibility. Field testing confirmed this implementation works.
 
-From alpha5.4.2, wrapped trusted Fleet cores receive `require` and `package` from `cc.require.make(env, dir)`, plus the caller's `shell` where available. Pointer wrappers load the host from an absolute path rather than relying on module search-path behavior. Diagnostic file writes also provide a `writeLine` compatibility layer over `write` for ports whose file handles differ from upstream CC:Tweaked.
+## D017 — Do not promote event interception without field verification
 
-## D017 — Arrow keys navigate UI focus before legacy Fleet actions
+Alpha5.4.3 attempted keyboard-focus navigation by proxying `os.pullEvent`/`os.pullEventRaw`, swallowing physical navigation keys and injecting synthetic actions. All Fleet wrappers then regressed to `shell.run returned false`, while the same unchanged Fleet cores were field-verified under alpha5.4.2.
 
-From alpha5.4.3, Fleet pointer panels support visible keyboard focus. In normal and confirmation screens, physical arrow keys move focus and `Enter` activates the focused option. The pointer host captures these navigation events before the unchanged legacy core sees them, then emits a synthetic legacy action only after activation. This prevents one key press from both navigating the UI and accidentally executing a Fleet command.
-
-For Fleet Control this intentionally changes physical arrow semantics: arrows select the `Forward/Back/Left/Right` controls rather than moving a turtle immediately. A movement command occurs only after `Enter` or pointer activation. Numeric-entry screens remain different: left/right continue to adjust the current value directly, while Enter/Escape accept/default it.
+Production therefore rolls back to the exact alpha5.4.2 pointer payload in alpha5.4.3.1. The failed alpha5.4.3 diagnostic under `/data` must be inspected before another keyboard-navigation implementation is promoted. The next design should minimize event interception and must ensure Fleet Control navigation cannot also issue movement.
