@@ -70,6 +70,10 @@ Alpha5.4.1 launched wrapped Fleet cores in a custom environment without the prog
 
 ## D017 — Do not promote event interception without field verification
 
-Alpha5.4.3 attempted keyboard-focus navigation by proxying `os.pullEvent`/`os.pullEventRaw`, swallowing physical navigation keys and injecting synthetic actions. All Fleet wrappers then regressed to `shell.run returned false`, while the same unchanged Fleet cores were field-verified under alpha5.4.2.
+Alpha5.4.3 attempted keyboard-focus navigation by proxying `os.pullEvent`/`os.pullEventRaw`, swallowing physical navigation keys and injecting synthetic actions. All Fleet wrappers then regressed to `shell.run returned false`, while the same unchanged Fleet cores were field-verified under alpha5.4.2. Alpha5.4.3.1 therefore restored the exact alpha5.4.2 pointer payload while diagnostics were inspected.
 
-Production therefore rolls back to the exact alpha5.4.2 pointer payload in alpha5.4.3.1. The failed alpha5.4.3 diagnostic under `/data` must be inspected before another keyboard-navigation implementation is promoted. The next design should minimize event interception and must ensure Fleet Control navigation cannot also issue movement.
+## D018 — Treat `keys.*` capabilities as feature-detected on Polymania
+
+The alpha5.4.3 diagnostic shows failure inside `pointer_host_core` during `host_run`, before the unchanged Fleet cores distinguish themselves. Code inspection found a new keyed-table initializer containing `[keys.escape] = true`. A missing `keys.escape` makes that initializer fail immediately with `table index is nil`; alpha5.4.2 did not use Escape as a table key. Because the in-game terminal screenshot truncates the suffix of the error line, this diagnosis is strongly supported but the exact error suffix was not captured verbatim.
+
+From alpha5.4.4, optional key constants are never assumed present when used as table keys or synthetic key codes. The production-proven alpha5.4.2 outer host remains unchanged, while a compatibility loader supplies a local Escape sentinel only if necessary before loading the navigation core. The global `keys` table is not mutated.
