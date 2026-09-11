@@ -60,8 +60,14 @@ Pocket and ordinary-computer keyboard interaction is cumbersome in the current p
 
 The prior architecture/state/rules/decision documents lived on an old `docs/project-context-0.20.4.2` branch and became stale. From alpha5.4 onward the four reference Markdown files are maintained in `main` and updated with releases that materially change assumptions or verified state.
 
-## D015 — Pointer failures must be observable and trusted-core launch should use CraftOS program execution
+## D015 — Pointer failures must be observable
 
-Alpha5.4 field testing showed clicks selecting BASE Pocket menu rows while wrapped Fleet applications immediately returned. The menu only changes selection inside `activate()`, so this proves pointer events reached the menu and the failure occurred after activation. The old code also discarded `shell.run()==false`, hiding runtime errors.
+Alpha5.4 field testing showed clicks selecting BASE Pocket menu rows while wrapped Fleet applications immediately returned. The menu only changes selection inside `activate()`, so this proved pointer events reached the menu and the failure occurred after activation. The old code also discarded `shell.run()==false`, hiding runtime errors.
 
-From alpha5.4.1, Pocket must surface failed application launches and persist diagnostics. The pointer host uses a proxy inheriting the live `term` API instead of shallow-copying it, and launches trusted Fleet core programs with `os.run(env, path)` rather than direct `loadfile(..., env)`. This use of `os.run` is permitted because Fleet cores are trusted code; D001 still forbids treating `os.run` as a sandbox/security boundary.
+From alpha5.4.1, Pocket surfaces failed application launches and persists diagnostics. The pointer host also uses a proxy inheriting the live `term` API instead of shallow-copying it. This use remains limited to trusted Fleet cores; D001 still forbids treating the execution environment as a sandbox/security boundary.
+
+## D016 — Custom trusted program environments must recreate CC program services
+
+Alpha5.4.1 still launched wrapped Fleet cores with a custom environment that inherited `_G` but did not recreate the program-local `require/package` service. Field testing produced `shell.run returned false`, while the core's first statement requires `lib.fleet.common`. This is the same class of environment issue previously seen in updater work.
+
+From alpha5.4.2, wrapped trusted Fleet cores receive `require` and `package` from `cc.require.make(env, dir)`, plus the caller's `shell` where available. Pointer wrappers load the host from an absolute path rather than relying on module search-path behavior. Diagnostic file writes also provide a `writeLine` compatibility layer over `write` for ports whose file handles differ from upstream CC:Tweaked.
