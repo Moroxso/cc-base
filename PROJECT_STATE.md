@@ -1,6 +1,6 @@
 # BASE Project State
 
-Last synchronized release target: `0.23.0-alpha.5.4.2`.
+Last synchronized release target: `0.23.0-alpha.5.4.3`.
 
 Canonical priority when information conflicts:
 
@@ -34,7 +34,8 @@ Defense Foundation exists. Fleet was expanded substantially:
 - Scheduler and load governor;
 - performance benchmarking/profile;
 - pointer-first Fleet UI host in alpha5.4;
-- pointer launch diagnostics/hardening in alpha5.4.1/.5.4.2.
+- pointer launch diagnostics/hardening in alpha5.4.1/.5.4.2;
+- keyboard focus navigation for pointer panels in alpha5.4.3.
 
 ## Current Fleet field status
 
@@ -46,9 +47,11 @@ Defense Foundation exists. Fleet was expanded substantially:
 
 `0.23.0-alpha.5.4` introduced pointer wrappers around unchanged Fleet cores. Field testing showed the BASE Pocket main menu received clicks and selected rows, but wrapped applications immediately returned without a visible error. This proved pointer input reached the menu and isolated the failure to the launch/wrapper path rather than mouse-event delivery.
 
-`0.23.0-alpha.5.4.1` made failed `shell.run()` launches visible. Field testing then showed `/fleet_control.lua` returning false, while both diagnostic files remained empty. The remaining failure is consistent with the wrapped core being launched in a custom environment without the program-local `require/package` setup normally provided by CC:Tweaked.
+`0.23.0-alpha.5.4.1` made failed `shell.run()` launches visible. Field testing then showed `/fleet_control.lua` returning false, while both diagnostic files remained empty. The remaining failure was consistent with the wrapped core being launched in a custom environment without the program-local `require/package` setup normally provided by CC:Tweaked.
 
-`0.23.0-alpha.5.4.2` restores a complete trusted program environment for wrapped Fleet cores using `cc.require.make(env, dir)`, explicitly carries `shell`, and uses an absolute pointer-host loader so wrapper startup does not depend on module search paths. It also provides a `writeLine` compatibility layer over `write` for Polymania file handles so diagnostics cannot silently truncate to empty files for that reason. Stable Fleet core/job/network logic remains unchanged.
+`0.23.0-alpha.5.4.2` restored a complete trusted program environment for wrapped Fleet cores using `cc.require.make(env, dir)`, explicitly carries `shell`, and uses an absolute pointer-host loader so wrapper startup does not depend on module search paths. It also provides a `writeLine` compatibility layer over `write` for Polymania file handles. Field testing confirmed the Fleet menus launch correctly after this fix.
+
+`0.23.0-alpha.5.4.3` adds keyboard focus navigation to the same pointer panels without changing Fleet core/job/network semantics. In normal Fleet panels, physical arrow keys move the visible UI focus and `Enter` activates the focused option. The legacy core receives only the synthetic action generated after activation, preventing a navigation key from also triggering the underlying action. This is especially important for Fleet Control: arrows now select `Forward/Back/Left/Right` options instead of immediately moving a turtle; movement occurs only after `Enter` or pointer activation. Numeric input keeps left/right as value adjustment and Enter/Escape as accept/default.
 
 ## Polymania/server observations
 
@@ -71,6 +74,7 @@ Defense Foundation exists. Fleet was expanded substantially:
 - Preserve `/data` during updates.
 - For pointer UI failures, inspect `/data/pointer_ui_error.log` and `/data/pocket_launch_error.log` before changing Fleet cores.
 - Custom trusted-program environments that use `require` must construct `require/package` with `cc.require.make`; inheriting only `_G` is insufficient.
+- Pointer and keyboard-focus navigation must stay behaviorally equivalent: pointer activation and `Enter` on a focused option dispatch the same synthetic legacy action.
 
 ## Open technical debt
 
@@ -88,18 +92,20 @@ Defense Foundation exists. Fleet was expanded substantially:
 12. Global/interdimensional modem delivery is observed but its exact server implementation is unknown.
 13. Router/firewall/DDoS GlobalNet design is planned, not implemented.
 14. RISC-V VM details are unknown and must not be guessed.
-15. Pointer UI remains field-test dependent across Pocket and ordinary Polymania computers; do not assume identical terminal API behavior until verified.
+15. Pointer/keyboard UI remains field-test dependent across Pocket and ordinary Polymania computers; do not assume identical terminal API behavior until verified.
 
 ## Immediate roadmap
 
-### 0.23.0-alpha.5.4.2 — Pointer program-environment hotfix
+### 0.23.0-alpha.5.4.3 — Pointer keyboard navigation
 
-- preserve clickable BASE Pocket menu;
-- absolute-load pointer host from wrappers;
-- install pointer host core separately;
-- construct `require/package` with `cc.require.make` for wrapped trusted Fleet programs;
-- carry `shell`/program globals needed by existing cores;
-- compatibility `writeLine` implementation for diagnostic writes;
+- keep mouse/touch activation;
+- add visible keyboard focus to Fleet pointer panels;
+- arrow keys move focus in normal/confirmation screens;
+- Enter activates the focused option;
+- Escape maps to Back/Cancel where applicable;
+- capture physical navigation keys before legacy Fleet cores see them;
+- dispatch the chosen legacy key as a synthetic pointer action;
+- retain numeric-entry arrow behavior;
 - no Fleet worker/job/network semantics changes.
 
 ### 0.23.0-alpha.6 — Industrial Fleet
