@@ -59,3 +59,9 @@ Pocket and ordinary-computer keyboard interaction is cumbersome in the current p
 ## D014 — Keep project-context docs in `main`
 
 The prior architecture/state/rules/decision documents lived on an old `docs/project-context-0.20.4.2` branch and became stale. From alpha5.4 onward the four reference Markdown files are maintained in `main` and updated with releases that materially change assumptions or verified state.
+
+## D015 — Pointer failures must be observable and trusted-core launch should use CraftOS program execution
+
+Alpha5.4 field testing showed clicks selecting BASE Pocket menu rows while wrapped Fleet applications immediately returned. The menu only changes selection inside `activate()`, so this proves pointer events reached the menu and the failure occurred after activation. The old code also discarded `shell.run()==false`, hiding runtime errors.
+
+From alpha5.4.1, Pocket must surface failed application launches and persist diagnostics. The pointer host uses a proxy inheriting the live `term` API instead of shallow-copying it, and launches trusted Fleet core programs with `os.run(env, path)` rather than direct `loadfile(..., env)`. This use of `os.run` is permitted because Fleet cores are trusted code; D001 still forbids treating `os.run` as a sandbox/security boundary.
