@@ -1,6 +1,6 @@
 # BASE Project State
 
-Last synchronized release target: `0.23.0-alpha.5.4`.
+Last synchronized release target: `0.23.0-alpha.5.4.1`.
 
 Canonical priority when information conflicts:
 
@@ -33,7 +33,8 @@ Defense Foundation exists. Fleet was expanded substantially:
 - persistent completion ledger;
 - Scheduler and load governor;
 - performance benchmarking/profile;
-- pointer-first Fleet UI host in alpha5.4.
+- pointer-first Fleet UI host in alpha5.4;
+- pointer-launch diagnostics/hardening in alpha5.4.1.
 
 ## Current Fleet field status
 
@@ -43,7 +44,9 @@ Defense Foundation exists. Fleet was expanded substantially:
 
 `0.23.0-alpha.5.2/.5.3` added delay/concurrency benchmarking and an accumulated performance profile. Latest observed 18-unit profile favors delay `0.15` and AUTO concurrency; the sample confidence is still low and must not be promoted to a permanent constant.
 
-`0.23.0-alpha.5.4` changes UI only. Stable Fleet cores are installed separately and launched through pointer wrappers. No turtle movement/job algorithm is intentionally changed by this release.
+`0.23.0-alpha.5.4` introduced pointer wrappers around unchanged Fleet cores. Field testing showed the BASE Pocket main menu received clicks and selected rows, but wrapped applications immediately returned without a visible error. This proves pointer input reached the menu and isolates the failure to the launch/wrapper path rather than mouse-event delivery.
+
+`0.23.0-alpha.5.4.1` hardens that launch path: pointer host uses a terminal proxy with `__index=term` instead of a shallow term-table copy, launches trusted Fleet cores through `os.run(env, path)`, and persists pointer/launch diagnostics. Pocket OS no longer discards a `shell.run()==false` result.
 
 ## Polymania/server observations
 
@@ -64,6 +67,7 @@ Defense Foundation exists. Fleet was expanded substantially:
 - Treat saved performance values as recommendations, not guarantees.
 - Do not update an active turtle job.
 - Preserve `/data` during updates.
+- For pointer UI failures, inspect `/data/pointer_ui_error.log` and `/data/pocket_launch_error.log` before changing Fleet cores.
 
 ## Open technical debt
 
@@ -81,16 +85,18 @@ Defense Foundation exists. Fleet was expanded substantially:
 12. Global/interdimensional modem delivery is observed but its exact server implementation is unknown.
 13. Router/firewall/DDoS GlobalNet design is planned, not implemented.
 14. RISC-V VM details are unknown and must not be guessed.
+15. Pointer UI remains field-test dependent across Pocket and ordinary Polymania computers; do not assume identical terminal API behavior until verified.
 
 ## Immediate roadmap
 
-### 0.23.0-alpha.5.4 — Pointer UI / docs refresh
+### 0.23.0-alpha.5.4.1 — Pointer launch hotfix
 
-- unified pointer host;
-- mouse/touch control panel for Fleet Control, Jobs, Scheduler and Performance;
-- numeric pointer input without normal dependence on on-screen keyboard;
-- clickable BASE Pocket main menu;
-- bring project-context Markdown files into `main` and keep them in release workflow.
+- preserve clickable BASE Pocket menu;
+- propagate application launch failure instead of silently returning;
+- terminal proxy inherits the live `term` API rather than shallow-copying it;
+- run trusted Fleet cores through `os.run(env, path)`;
+- persist pointer/launch diagnostics under `/data`;
+- no Fleet worker/job/network semantics changes.
 
 ### 0.23.0-alpha.6 — Industrial Fleet
 
