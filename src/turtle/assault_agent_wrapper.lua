@@ -183,10 +183,12 @@ local function syncIndustrialCheckpoint(job, eventName, pose)
         }
     end
 
+    local priorPhase = tostring(cp.phase or "")
     local phase = tostring(job.phase or cp.phase or "OUT")
     if eventName == "DONE" then phase = "DONE"
     elseif eventName == "FAIL" then phase = "FAILED"
     elseif eventName == "RETURN" then phase = "RETURN"
+    elseif (priorPhase == "DONE" or priorPhase == "FAILED") and (eventName == nil or eventName == "") then phase = priorPhase
     elseif phase ~= "OUT" and phase ~= "RETURN" and phase ~= "DONE" and phase ~= "FAILED" then phase = "OUT" end
     cp.phase = phase
 
