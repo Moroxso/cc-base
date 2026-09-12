@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version": "0.23.0-alpha.5.4.5",
-  "sourceCommit": "d5e1487992f7150d8e8e94e918abf98d9cdb866d",
+  "version": "0.23.0-alpha.6.0",
+  "sourceCommit": "6d5f0b9e8587209254167bcc3ed5667b670679f2",
   "hashAlgorithm": "git-blob-sha1",
   "profiles": {
-    "assault": ["assault", "assault_core", "startup"],
-    "relay": ["assault", "assault_core", "startup"],
-    "pocket": ["pointer_host", "pointer_host_core", "pointer_host_core_nav", "pocket_os", "pocket_control", "pocket_control_core", "pocket_jobs", "pocket_jobs_core", "pocket_scheduler", "pocket_scheduler_core", "pocket_performance", "pocket_performance_core", "pocket_startup"]
+    "assault": ["common", "industrial", "assault", "assault_core", "startup"],
+    "relay": ["common", "industrial", "assault", "assault_core", "startup"],
+    "pocket": ["common", "industrial", "pointer_host", "pointer_host_core", "pointer_host_core_nav", "pocket_os", "pocket_control", "pocket_control_core", "pocket_jobs", "pocket_jobs_core", "pocket_scheduler", "pocket_scheduler_core", "pocket_performance", "pocket_performance_core", "pocket_startup"]
   },
   "files": {
     "common": {
@@ -14,6 +14,12 @@
       "target": "/lib/fleet/common.lua",
       "size": 11338,
       "hash": "f9f59711b65643c007ec98898cd6ffd3f0feae7e"
+    },
+    "industrial": {
+      "source": "src/lib/fleet/industrial.lua",
+      "target": "/lib/fleet/industrial.lua",
+      "size": 15381,
+      "hash": "a6a6fc5f01b8a6087ef1d016cad4bd9f10df8c9e"
     },
     "pointer_host": {
       "source": "src/lib/pocket/pointer_host_v3.lua",
