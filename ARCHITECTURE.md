@@ -1,6 +1,6 @@
 # BASE Architecture
 
-Last synchronized with Fleet field release: `0.23.0-alpha.5.4`.
+Last synchronized with Fleet field release: `0.23.0-alpha.5.4.5`.
 
 This file is an architectural reference. For exact deployed bytes, versions and hashes, `deploy.json`, `packages.json`, `fleet.json` and the source files referenced by those manifests are authoritative.
 
@@ -112,9 +112,9 @@ These measurements are server-state observations, not universal constants. Perfo
 
 ## 9. Pocket / local UI
 
-0.23.0-alpha.5.4 introduces a unified pointer host for Fleet applications. On Polymania, keyboard input is inconvenient on Pocket and ordinary computers, so primary interaction is `mouse_click`/`monitor_touch` where available. Pointer controls occupy a dedicated panel below the legacy application window. Keyboard arrows/hotkeys remain fallback inputs.
+0.23.0-alpha.5.4 introduced a unified pointer host for Fleet applications. On Polymania, keyboard input is inconvenient on Pocket and ordinary computers, so primary interaction is `mouse_click`/`monitor_touch` where available. Pointer controls occupy a dedicated panel below the legacy application window. Keyboard arrows/hotkeys remain fallback inputs.
 
-Numeric forms use pointer-adjustable values instead of requiring CraftOS `read()`/the on-screen keyboard for normal operation. Existing Fleet cores remain separate from the pointer wrappers so tested job/network logic is not rewritten solely for UI changes.
+Numeric forms use pointer-adjustable values instead of requiring CraftOS `read()`/the on-screen keyboard for normal operation. From alpha5.4.5, Left/Right adjust numeric values, Up selects `Default`, Down selects `OK`, and Enter activates the selected choice. Start/Benchmark confirmations may default to `Confirm`; destructive Cancel/Abort/Update confirmations retain `Cancel` as the safe default. Existing Fleet cores remain separate from the pointer wrappers so tested job/network logic is not rewritten solely for UI changes.
 
 ## 10. Defense
 
