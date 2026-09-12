@@ -83,3 +83,11 @@ From alpha5.4.4, optional key constants are never assumed present when used as t
 Alpha5.4.4 field testing showed that numeric `read()` panels consumed Left/Right for value adjustment but had no Up/Down selection path, while start confirmations opened with `Cancel` focused. In an Enter-driven workflow this made valid Scheduler/Jobs starts end as `Run cancelled`/`Job cancelled` even though the Fleet job cores were unchanged.
 
 From alpha5.4.5, numeric forms keep Left/Right as value adjustment and use Up=`Default`, Down=`OK`, Enter=activate. Start/Benchmark confirmations may default to `Confirm`, but destructive Cancel/Abort/Update confirmations must continue to default to `Cancel`. This policy belongs in the pointer host and must not be implemented by rewriting stable Fleet worker/job/network cores.
+
+## D020 — Stage Industrial Fleet behind a shared pure planning contract
+
+The alpha4.2 physical job worker is field-verified at fleet scale and is therefore a high-risk place to introduce Tunnel refactoring, new excavation geometry, fuel policy, inventory policy and checkpoint changes simultaneously.
+
+From alpha6.0, Industrial Fleet starts with a pure shared module that owns job-spec validation, deterministic Tunnel/Excavate Box/Quarry planning, conservative fuel projection, work-slot inventory pressure and a versioned checkpoint schema. The existing physical worker remains unchanged in this foundation release. Tunnel migration, Box execution, Quarry execution and UI integration are separate stages and each physical-execution change must be field-tested before the next layer depends on it.
+
+A planner/checkpoint hash or persisted cursor does not make physical turtle movement crash-atomic. Restart recovery must remain conservative and later add explicit reconciliation before claiming exact resume after power loss.
