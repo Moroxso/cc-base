@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "version": "0.23.0-alpha.6.1",
-  "sourceCommit": "9c496c04bb730e4bd99080cabf21aebc3d00e9b4",
+  "sourceCommit": "9dca512d6ef1dd8ba25dab4507c8ce78e722827c",
   "hashAlgorithm": "git-blob-sha1",
   "profiles": {
     "assault": ["common", "industrial", "assault", "assault_core", "startup"],
@@ -42,8 +42,8 @@
     "assault": {
       "source": "src/turtle/assault_agent_wrapper.lua",
       "target": "/assault_agent.lua",
-      "size": 13466,
-      "hash": "17448673a5acbd8748169bedfa7307092dcd25a0"
+      "size": 13640,
+      "hash": "9de560d52f2251ad99d21004345332a7b0b0fb60"
     },
     "assault_core": {
       "source": "src/turtle/assault_agent.lua",
