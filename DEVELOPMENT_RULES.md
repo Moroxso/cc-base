@@ -1,6 +1,6 @@
 # BASE Development Rules
 
-Last synchronized with `0.23.0-alpha.5.4`.
+Last synchronized with `0.23.0-alpha.5.4.5`.
 
 These rules exist to keep changes auditable and to reduce regressions and context drift.
 
@@ -48,6 +48,8 @@ For new interactive Fleet/Pocket/local-computer tools:
 - Keep actions visible and clickable; do not depend on memorized single-letter commands.
 - Long-running work must continue to process network/status events while UI is open.
 - UI wrappers must not silently change job/network semantics.
+- In numeric pointer forms, keep Left/Right for value adjustment, Up for `Default`, Down for `OK`, and Enter for activating the selected choice unless a later field-tested interaction model explicitly replaces this convention.
+- Non-destructive Start/Benchmark confirmations may default to `Confirm`; destructive Cancel/Abort/Update confirmations must retain `Cancel` as the safe default.
 
 ## 5. Fleet execution rules
 
