@@ -77,3 +77,9 @@ Alpha5.4.3 attempted keyboard-focus navigation by proxying `os.pullEvent`/`os.pu
 The alpha5.4.3 diagnostic shows failure inside `pointer_host_core` during `host_run`, before the unchanged Fleet cores distinguish themselves. Code inspection found a new keyed-table initializer containing `[keys.escape] = true`. A missing `keys.escape` makes that initializer fail immediately with `table index is nil`; alpha5.4.2 did not use Escape as a table key. Because the in-game terminal screenshot truncates the suffix of the error line, this diagnosis is strongly supported but the exact error suffix was not captured verbatim.
 
 From alpha5.4.4, optional key constants are never assumed present when used as table keys or synthetic key codes. The production-proven alpha5.4.2 outer host remains unchanged, while a compatibility loader supplies a local Escape sentinel only if necessary before loading the navigation core. The global `keys` table is not mutated.
+
+## D019 — Separate value adjustment from input confirmation navigation
+
+Alpha5.4.4 field testing showed that numeric `read()` panels consumed Left/Right for value adjustment but had no Up/Down selection path, while start confirmations opened with `Cancel` focused. In an Enter-driven workflow this made valid Scheduler/Jobs starts end as `Run cancelled`/`Job cancelled` even though the Fleet job cores were unchanged.
+
+From alpha5.4.5, numeric forms keep Left/Right as value adjustment and use Up=`Default`, Down=`OK`, Enter=activate. Start/Benchmark confirmations may default to `Confirm`, but destructive Cancel/Abort/Update confirmations must continue to default to `Cancel`. This policy belongs in the pointer host and must not be implemented by rewriting stable Fleet worker/job/network cores.
