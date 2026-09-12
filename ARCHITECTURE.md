@@ -1,6 +1,6 @@
 # BASE Architecture
 
-Last synchronized with Fleet field release: `0.23.0-alpha.5.4.5`.
+Last synchronized with Fleet release target: `0.23.0-alpha.6.0`.
 
 This file is an architectural reference. For exact deployed bytes, versions and hashes, `deploy.json`, `packages.json`, `fleet.json` and the source files referenced by those manifests are authoritative.
 
@@ -85,6 +85,8 @@ Completion correctness is based on a persistent completion ledger (`lastJob`) ke
 
 Scheduler state and completion state survive Pocket/app restarts. Turtle job state is checkpointed for recovery. A reboot cannot be made mathematically atomic with physical movement without a stronger write-ahead/reconciliation protocol, so crash recovery must remain conservative.
 
+The alpha6 Industrial Fleet work is layered on top of this verified executor rather than replacing it wholesale. Physical movement semantics change only in isolated, field-tested stages.
+
 ## 8. Fleet scheduling and performance
 
 The scheduler supports:
@@ -125,9 +127,28 @@ Defense Foundation exists but has known technical debt:
 
 Do not silently reuse Fleet raid behavior as Defense behavior until these are explicitly repaired and tested.
 
-## 11. Planned Industrial Fleet
+## 11. Industrial Fleet
 
-The next major Fleet phase is an industrial job engine. Target primitives include Tunnel, Excavate Box, Quarry, later Strip Mine, unload/refuel and persistent resume. Job types should share a planner/executor/checkpoint/fuel/inventory foundation rather than duplicating movement logic.
+`0.23.0-alpha.6.0` introduces `/lib/fleet/industrial.lua` as the shared pure planning/state layer. It does not yet replace the field-verified alpha4.2 turtle movement loop.
+
+The Industrial contract owns:
+
+- normalized specifications for `tunnel_roundtrip`, `excavate_box` and `quarry`;
+- deterministic zero-origin serpentine cell ordering for rectangular excavation volumes;
+- conservative movement/fuel projection with an explicit reserve;
+- work-inventory pressure using slots 5–16 while the current Fleet fuel convention remains slots 1–4;
+- a versioned persistent checkpoint model carrying job identity, normalized spec, plan summary, phase, logical progress, origin/pose and execution statistics;
+- validation/normalization of recovered checkpoints.
+
+For box/quarry traversal, alternating rows snake across a layer and alternating layers reverse the whole layer path. This keeps consecutive logical work cells Manhattan-adjacent, including a direct vertical transition between layer endpoints. Quarry currently shares the same geometric planner as Excavate Box; semantic differences are expressed through job type and vertical/depth parameters rather than a second movement algorithm.
+
+The staged execution architecture is:
+
+`Pocket/Scheduler spec -> Industrial planner/checkpoint -> verified Fleet worker loops -> turtle primitives`
+
+Tunnel migration must first adopt the shared preflight/checkpoint contract while preserving the already field-tested forward/dig/return loop. Excavate Box and Quarry execution are added only after that migration is verified. Inventory unload/refuel transitions are represented in the checkpoint phase model but their physical station workflow is not yet implemented in alpha6.0.
+
+The planner can describe intended logical progress, but no checkpoint makes physical movement atomic across an unexpected power loss. Exact restart recovery requires reconciliation between persisted intent, local NAV state and the turtle's actual world position before a job can safely resume.
 
 ## 12. Future RISC-V VM
 
