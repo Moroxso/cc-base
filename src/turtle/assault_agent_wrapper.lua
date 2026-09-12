@@ -4,6 +4,7 @@ local Industrial = require("lib.fleet.industrial")
 local WRAPPER_VERSION = "0.23.0-alpha.6.1"
 local CORE_PATH = "/assault_agent_core.lua"
 local CONFIG_PATH = "/data/fleet_agent.json"
+local CORE_JOB_STATE_PATH = "/data/fleet_job.json"
 local LAST_JOB_PATH = "/data/fleet_last_job.json"
 local INDUSTRIAL_CHECKPOINT_PATH = "/data/fleet_industrial_job.json"
 local PREFLIGHT_CACHE_LIMIT = 64
@@ -156,6 +157,42 @@ local function updateLatestPose(payload)
     if payload.heading ~= nil then latestPose.heading = headingNumber(payload.heading, latestPose.heading) end
 end
 
+local function coreJobPose(jobId)
+    local saved = readJson(CORE_JOB_STATE_PATH)
+    if type(saved) ~= "table" or type(saved.job) ~= "table" then return nil end
+    if tostring(saved.job.id or "") ~= tostring(jobId or "") then return nil end
+    local nav = type(saved.nav) == "table" and saved.nav or {}
+    return {
+        x = tonumber(nav.x) or 0,
+        y = tonumber(nav.y) or 0,
+        z = tonumber(nav.z) or 0,
+        heading = math.floor(tonumber(saved.heading) or tonumber(saved.startHeading) or latestPose.heading or 0) % 4,
+        frame = tostring(nav.frame or latestPose.frame or ""),
+    }
+end
+
+local function derivedTunnelPose(cp, job)
+    if type(cp) ~= "table" or type(cp.origin) ~= "table" then return nil end
+    local origin = cp.origin
+    local heading = math.floor(tonumber(origin.heading) or 0) % 4
+    local dirs = {
+        [0] = {x=0, z=-1},
+        [1] = {x=1, z=0},
+        [2] = {x=0, z=1},
+        [3] = {x=-1, z=0},
+    }
+    local net = math.max(0, math.floor(tonumber(job.outbound) or 0))
+        - math.max(0, math.floor(tonumber(job.returned) or 0))
+    local d = dirs[heading]
+    return {
+        x = (tonumber(origin.x) or 0) + d.x * net,
+        y = tonumber(origin.y) or 0,
+        z = (tonumber(origin.z) or 0) + d.z * net,
+        heading = heading,
+        frame = tostring(origin.frame or ""),
+    }
+end
+
 local function syncIndustrialCheckpoint(job, eventName, pose)
     local spec = tunnelSpecFromJob(job)
     if not spec then return nil end
@@ -163,8 +200,9 @@ local function syncIndustrialCheckpoint(job, eventName, pose)
     local id = tostring(job.id or "")
     if id == "" then return nil end
 
+    local observedPose = coreJobPose(id) or pose or latestPose
     if not industrialCheckpoint or industrialCheckpoint.jobId ~= id then
-        local cp = Industrial.newCheckpoint(id, spec, pose or latestPose)
+        local cp = Industrial.newCheckpoint(id, spec, observedPose)
         if not cp then return nil end
         industrialCheckpoint = cp
     end
@@ -198,7 +236,7 @@ local function syncIndustrialCheckpoint(job, eventName, pose)
     cp.progress.cursor = cp.progress.completed
     cp.progress.layer = 0
 
-    cp.pose = copyPose(pose or latestPose)
+    cp.pose = copyPose(coreJobPose(id) or derivedTunnelPose(cp, job) or observedPose)
     cp.reason = tostring(job.reason or cp.reason or "")
     cp.stats = type(cp.stats) == "table" and cp.stats or {}
     cp.stats.moves = math.max(0, cp.progress.completed + cp.progress.returned)
