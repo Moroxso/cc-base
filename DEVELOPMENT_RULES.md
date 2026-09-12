@@ -1,6 +1,6 @@
 # BASE Development Rules
 
-Last synchronized with `0.23.0-alpha.5.4.5`.
+Last synchronized with `0.23.0-alpha.6.0`.
 
 These rules exist to keep changes auditable and to reduce regressions and context drift.
 
@@ -53,13 +53,23 @@ For new interactive Fleet/Pocket/local-computer tools:
 
 ## 5. Fleet execution rules
 
-- Stable physical worker code is high-risk: avoid rewriting it for UI-only releases.
+- Stable physical worker code is high-risk: avoid rewriting it for UI-only releases or combining multiple unrelated movement changes in one release.
 - Commands must remain idempotent across retries.
 - Completion must correlate to the active `jobId`; never infer current completion from a bare stale terminal state.
 - Persist enough job/result state to recover Pocket/app restarts.
 - Do not claim perfect crash atomicity for physical movement without a real write-ahead/reconciliation design.
 - Updates during active jobs are blocked/deferred.
 - Dedicated RELAY nodes forward mesh packets; normal workers do not.
+
+### Industrial Fleet rules
+
+- New industrial job types must use `/lib/fleet/industrial.lua` for specification validation, planning, fuel projection, inventory pressure and checkpoint normalization instead of duplicating those rules in Pocket/Scheduler/worker code.
+- Migrate the verified Tunnel worker incrementally: first shared preflight/checkpoint bookkeeping, then new geometry/execution. Preserve the alpha4.2 movement loop unless a release explicitly changes and field-tests it.
+- Excavate Box and Quarry share the deterministic serpentine planner. Do not create independent geometry implementations unless field evidence demonstrates a requirement.
+- Current Fleet convention reserves slots 1–4 for fuel and treats slots 5–16 as industrial work inventory. Changes to this allocation must be explicit and migration-safe.
+- Checkpoint writes record logical intent/progress, not proof of an atomic physical move. After unexpected reboot, recovery must be conservative until persisted state can be reconciled with actual position/heading.
+- Inventory-full/unload and low-fuel/refuel transitions must be represented as explicit job phases and must not silently discard mined items or abandon return fuel reserve.
+- Industrial digging targets own/allied territory; do not design industrial primitives around bypassing hostile claim protection.
 
 ## 6. Scheduler/load rules
 
