@@ -1,6 +1,6 @@
 # BASE Project State
 
-Last synchronized release target: `0.23.0-alpha.5.4.5`.
+Last synchronized release target: `0.23.0-alpha.6.0`.
 
 Canonical priority when information conflicts:
 
@@ -46,6 +46,8 @@ Code inspection found a deterministic Polymania compatibility hazard introduced 
 
 `0.23.0-alpha.5.4.5` fixes those defects only in the pointer navigation layer. Numeric input keeps Left/Right for fine adjustment, Up selects `Default`, Down selects `OK`, and Enter activates the selected choice. Text input uses the same Default/OK selection model. Start/Benchmark confirmations default to `Confirm`; destructive Cancel/Abort/Update confirmations continue to default to `Cancel`. Fleet worker, job, scheduler and network cores are unchanged. Field testing confirmed Scheduler and Jobs input navigation and job start/confirmation behavior work correctly on Polymania.
 
+`0.23.0-alpha.6.0` starts Industrial Fleet with a shared pure planning/state module at `/lib/fleet/industrial.lua`. It validates Tunnel, Excavate Box and Quarry specifications; builds deterministic serpentine box/quarry paths; estimates movement/fuel requirements; summarizes work-slot inventory pressure; and defines a versioned persistent checkpoint schema. This release deliberately does **not** replace the field-verified alpha4.2 physical worker executor. The new foundation is locally syntax/self-tested and is deployed to Fleet profiles for staged integration; Polymania behavior of future industrial execution remains unverified until the later executor stages.
+
 ## Polymania/server observations
 
 - Per-computer storage quota is approximately 8 MiB.
@@ -70,6 +72,7 @@ Code inspection found a deterministic Polymania compatibility hazard introduced 
 - Custom trusted environments using `require` must construct `require/package` with `cc.require.make`; inheriting only `_G` is insufficient.
 - Optional key constants must be validated before using them as keyed-table indexes or synthetic key codes.
 - In pointer numeric forms, Left/Right adjust the value, Up selects `Default`, Down selects `OK`, and Enter activates the selected choice.
+- Treat the alpha6.0 industrial planner/checkpoint API as the common contract for new industrial job types; do not duplicate box/quarry planning inside UI or worker code.
 
 ## Open technical debt
 
@@ -87,12 +90,17 @@ Code inspection found a deterministic Polymania compatibility hazard introduced 
 12. Global/interdimensional modem delivery implementation remains unknown.
 13. Router/firewall/DDoS GlobalNet design is planned, not implemented.
 14. RISC-V VM details are unknown and must not be guessed.
+15. Industrial checkpoint recovery cannot guarantee atomic correspondence with physical movement after power loss; reconciliation remains required before claiming crash-atomic excavation.
 
 ## Immediate roadmap
 
 ### 0.23.0-alpha.6 — Industrial Fleet
 
-Initial scope: common industrial job engine, Tunnel migration where safe, Excavate Box, Quarry, persistent checkpoints, inventory-full handling, fuel projection/refuel handling and Industrial Pocket UI.
+- `alpha.6.0`: shared planner/spec/checkpoint/fuel/inventory foundation; physical worker unchanged.
+- next: migrate Tunnel preflight/checkpoint bookkeeping onto the shared foundation while preserving the verified movement loop.
+- then: add Excavate Box execution and field-test single-unit recovery/inventory/fuel behavior.
+- then: add Quarry as a specialization of the same serpentine executor, followed by multi-unit scheduling and Industrial Pocket UI.
+- later within the phase: unload/refuel workflows, stronger restart reconciliation and ENGINEER role separation where appropriate.
 
 ### 0.24 — BASE Pocket OS 2
 
