@@ -44,7 +44,7 @@ Code inspection found a deterministic Polymania compatibility hazard introduced 
 
 `0.23.0-alpha.5.4.4` reintroduced keyboard-focus navigation through a compatibility loader layered over the working alpha5.4.2 host. The loader supplies a local non-nil Escape sentinel only when `keys.escape` is unavailable, without mutating global `keys`, then loads the existing navigation core. Field testing confirmed the wrappers launch, but exposed two navigation defects: Up/Down were not handled inside numeric `read()` panels, and start confirmations opened with `Cancel` focused. With the normal Enter-driven workflow this made Scheduler/Jobs appear to cancel work immediately.
 
-`0.23.0-alpha.5.4.5` fixes those defects only in the pointer navigation layer. Numeric input keeps Left/Right for fine adjustment, Up selects `Default`, Down selects `OK`, and Enter activates the selected choice. Text input uses the same Default/OK selection model. Start/Benchmark confirmations default to `Confirm`; destructive Cancel/Abort/Update confirmations continue to default to `Cancel`. Fleet worker, job, scheduler and network cores are unchanged.
+`0.23.0-alpha.5.4.5` fixes those defects only in the pointer navigation layer. Numeric input keeps Left/Right for fine adjustment, Up selects `Default`, Down selects `OK`, and Enter activates the selected choice. Text input uses the same Default/OK selection model. Start/Benchmark confirmations default to `Confirm`; destructive Cancel/Abort/Update confirmations continue to default to `Cancel`. Fleet worker, job, scheduler and network cores are unchanged. Field testing confirmed Scheduler and Jobs input navigation and job start/confirmation behavior work correctly on Polymania.
 
 ## Polymania/server observations
 
@@ -87,19 +87,8 @@ Code inspection found a deterministic Polymania compatibility hazard introduced 
 12. Global/interdimensional modem delivery implementation remains unknown.
 13. Router/firewall/DDoS GlobalNet design is planned, not implemented.
 14. RISC-V VM details are unknown and must not be guessed.
-15. Alpha5.4.5 pointer input/confirmation behavior still requires field verification on Pocket and ordinary Polymania computers.
 
 ## Immediate roadmap
-
-### 0.23.0-alpha.5.4.5 — Input navigation / safe confirmation defaults
-
-- keep the alpha5.4.4 optional-key compatibility loader;
-- install the new navigation payload as `/lib/pocket/pointer_host_core_nav.lua`;
-- preserve Left/Right numeric adjustment while adding Up=`Default`, Down=`OK`, Enter=activate;
-- default Start/Benchmark confirmations to `Confirm`;
-- retain safe `Cancel` default for destructive cancel/abort/update confirmations;
-- leave Fleet worker/job/network cores unchanged;
-- field-test Scheduler and Jobs with both keyboard and pointer input.
 
 ### 0.23.0-alpha.6 — Industrial Fleet
 
