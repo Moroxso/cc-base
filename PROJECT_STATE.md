@@ -1,6 +1,6 @@
 # BASE Project State
 
-Last synchronized release target: `0.23.0-alpha.5.4.4`.
+Last synchronized release target: `0.23.0-alpha.5.4.5`.
 
 Canonical priority when information conflicts:
 
@@ -42,7 +42,9 @@ Code inspection found a deterministic Polymania compatibility hazard introduced 
 
 `0.23.0-alpha.5.4.3.1` restored the exact field-verified alpha5.4.2 pointer payload while retaining diagnostics.
 
-`0.23.0-alpha.5.4.4` reintroduces keyboard-focus navigation through a compatibility loader layered over the working alpha5.4.2 host. The loader supplies a local non-nil Escape sentinel only when `keys.escape` is unavailable, without mutating global `keys`, then loads the existing navigation core. This isolates the key-API compatibility fix from Fleet cores and from the proven program-environment launch path.
+`0.23.0-alpha.5.4.4` reintroduced keyboard-focus navigation through a compatibility loader layered over the working alpha5.4.2 host. The loader supplies a local non-nil Escape sentinel only when `keys.escape` is unavailable, without mutating global `keys`, then loads the existing navigation core. Field testing confirmed the wrappers launch, but exposed two navigation defects: Up/Down were not handled inside numeric `read()` panels, and start confirmations opened with `Cancel` focused. With the normal Enter-driven workflow this made Scheduler/Jobs appear to cancel work immediately.
+
+`0.23.0-alpha.5.4.5` fixes those defects only in the pointer navigation layer. Numeric input keeps Left/Right for fine adjustment, Up selects `Default`, Down selects `OK`, and Enter activates the selected choice. Text input uses the same Default/OK selection model. Start/Benchmark confirmations default to `Confirm`; destructive Cancel/Abort/Update confirmations continue to default to `Cancel`. Fleet worker, job, scheduler and network cores are unchanged.
 
 ## Polymania/server observations
 
@@ -67,6 +69,7 @@ Code inspection found a deterministic Polymania compatibility hazard introduced 
 - For pointer UI failures, inspect `/data/pointer_ui_error.log` and `/data/pocket_launch_error.log` before changing Fleet cores.
 - Custom trusted environments using `require` must construct `require/package` with `cc.require.make`; inheriting only `_G` is insufficient.
 - Optional key constants must be validated before using them as keyed-table indexes or synthetic key codes.
+- In pointer numeric forms, Left/Right adjust the value, Up selects `Default`, Down selects `OK`, and Enter activates the selected choice.
 
 ## Open technical debt
 
@@ -84,19 +87,19 @@ Code inspection found a deterministic Polymania compatibility hazard introduced 
 12. Global/interdimensional modem delivery implementation remains unknown.
 13. Router/firewall/DDoS GlobalNet design is planned, not implemented.
 14. RISC-V VM details are unknown and must not be guessed.
-15. Keyboard-focus navigation in alpha5.4.4 still requires field verification on Pocket and ordinary Polymania computers.
+15. Alpha5.4.5 pointer input/confirmation behavior still requires field verification on Pocket and ordinary Polymania computers.
 
 ## Immediate roadmap
 
-### 0.23.0-alpha.5.4.4 — Safe-key pointer navigation
+### 0.23.0-alpha.5.4.5 — Input navigation / safe confirmation defaults
 
-- retain the exact field-verified alpha5.4.2 outer pointer host;
-- install a small compatibility loader as `/lib/pocket/pointer_host_core.lua`;
-- install the alpha5.4.3 navigation implementation separately as `/lib/pocket/pointer_host_core_nav.lua`;
-- provide a local Escape sentinel only when `keys.escape` is unavailable;
-- preserve mouse/touch operation and numeric forms;
-- retain arrow-focus/Enter activation without changing Fleet worker/job/network semantics;
-- keep diagnostics under `/data`.
+- keep the alpha5.4.4 optional-key compatibility loader;
+- install the new navigation payload as `/lib/pocket/pointer_host_core_nav.lua`;
+- preserve Left/Right numeric adjustment while adding Up=`Default`, Down=`OK`, Enter=activate;
+- default Start/Benchmark confirmations to `Confirm`;
+- retain safe `Cancel` default for destructive cancel/abort/update confirmations;
+- leave Fleet worker/job/network cores unchanged;
+- field-test Scheduler and Jobs with both keyboard and pointer input.
 
 ### 0.23.0-alpha.6 — Industrial Fleet
 
