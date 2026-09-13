@@ -1,6 +1,6 @@
 # BASE Project State
 
-Last synchronized release target: `0.23.0-alpha.6.0`.
+Last synchronized release target: `0.23.0-alpha.6.1.1`.
 
 Canonical priority when information conflicts:
 
@@ -16,69 +16,52 @@ Package dependency/ownership handling, updater journal/fallback behavior, mount-
 
 ### 0.22 — Storage / Service Supervisor
 
-Service Supervisor, System Status, Explorer/Commander and Storage management are implemented and field-tested. Confirmation handling accepts physical key events after a Polymania input compatibility hotfix.
+Service Supervisor, System Status, Explorer/Commander and Storage management are implemented and field-tested.
 
 ### 0.23 — Defense / Fleet
 
-Defense Foundation exists. Fleet now includes signed mesh/common protocol, Pocket control, assault/relay profiles, field updater/watchdog, local NAV/tool handling, Fleet Jobs, BASE Pocket OS, parallel job execution, persistent completion ledger, Scheduler/load governor, performance benchmarking/profile and pointer-first local UI.
+Defense Foundation exists. Fleet includes signed DIRECT/MESH/AUTO transport, Pocket control, ASSAULT/RELAY profiles, field updater/watchdog, local NAV/tool handling, Jobs, Scheduler/load governor, persistent completion ledger, performance profiling and pointer-first local UI.
 
 ## Current Fleet field status
 
-`0.23.0-alpha.4.2` job execution model is the stable turtle core. Tests with 4, 12 and 18 turtles completed tunnel round trips successfully across multiple step delays. Server scheduling creates noticeable per-turtle timing variance as fleet size grows, but workers continue progressing and complete.
+The `0.23.0-alpha.4.2` physical job executor remains the stable turtle core. It is field-verified with 4, 12 and 18 simultaneous turtles and multiple delays. Completion is correlated by `jobId` through the persistent `lastJob` ledger.
 
-`0.23.0-alpha.5.1` fixed false Scheduler completion by persisting and correlating `lastJob.id`.
+`0.23.0-alpha.5.4.5` is the field-verified pointer/UI baseline. Numeric forms use Left/Right to adjust values, Up=`Default`, Down=`OK`, Enter=activate. Scheduler and Jobs start/confirmation behavior is verified on Polymania.
 
-`0.23.0-alpha.5.2/.5.3` added delay/concurrency benchmarking and an accumulated performance profile. Latest observed 18-unit profile favors delay `0.15` and AUTO concurrency, but values remain recommendations rather than permanent constants.
+`0.23.0-alpha.6.0` introduced `/lib/fleet/industrial.lua`: normalized Tunnel/Excavate Box/Quarry specifications, serpentine planning, conservative fuel estimates, work-slot inventory pressure and a versioned checkpoint model. Deployment and ordinary Tunnel regression testing passed.
 
-`0.23.0-alpha.5.4` introduced pointer wrappers around unchanged Fleet cores.
+`0.23.0-alpha.6.1` migrated Tunnel preflight, fuel projection and Industrial checkpoint bookkeeping onto that shared contract while preserving the alpha4.2 physical `detect/dig -> forward -> back` loop. Field testing confirmed Tunnel completion and a terminal `DONE` checkpoint.
 
-`0.23.0-alpha.5.4.1` made failed launches observable.
-
-`0.23.0-alpha.5.4.2` restored a complete trusted CC program environment for wrapped cores using `cc.require.make(env, dir)`, absolute host loading and Polymania file-handle compatibility. Field testing confirmed all Fleet menus launch correctly in this version.
-
-`0.23.0-alpha.5.4.3` attempted keyboard-focus navigation by proxying `os.pullEvent` and capturing navigation events before the legacy cores. Field testing immediately regressed all Fleet wrappers to `shell.run returned false`. Persistent diagnostics show the failure occurs inside `pointer_host_core` at `host_run`, before the unchanged Fleet core becomes the distinguishing factor.
-
-Code inspection found a deterministic Polymania compatibility hazard introduced only in alpha5.4.3: the navigation core constructs a keyed table containing `[keys.escape] = true`. If this port/device does not expose `keys.escape`, Lua raises `table index is nil` immediately. Alpha5.4.2 referenced Escape only as an ordinary value and therefore did not trigger the same initialization failure. The terminal screenshot truncates the error suffix, so this remains a strongly supported root-cause diagnosis rather than a verbatim field error string.
-
-`0.23.0-alpha.5.4.3.1` restored the exact field-verified alpha5.4.2 pointer payload while retaining diagnostics.
-
-`0.23.0-alpha.5.4.4` reintroduced keyboard-focus navigation through a compatibility loader layered over the working alpha5.4.2 host. The loader supplies a local non-nil Escape sentinel only when `keys.escape` is unavailable, without mutating global `keys`, then loads the existing navigation core. Field testing confirmed the wrappers launch, but exposed two navigation defects: Up/Down were not handled inside numeric `read()` panels, and start confirmations opened with `Cancel` focused. With the normal Enter-driven workflow this made Scheduler/Jobs appear to cancel work immediately.
-
-`0.23.0-alpha.5.4.5` fixes those defects only in the pointer navigation layer. Numeric input keeps Left/Right for fine adjustment, Up selects `Default`, Down selects `OK`, and Enter activates the selected choice. Text input uses the same Default/OK selection model. Start/Benchmark confirmations default to `Confirm`; destructive Cancel/Abort/Update confirmations continue to default to `Cancel`. Fleet worker, job, scheduler and network cores are unchanged. Field testing confirmed Scheduler and Jobs input navigation and job start/confirmation behavior work correctly on Polymania.
-
-`0.23.0-alpha.6.0` starts Industrial Fleet with a shared pure planning/state module at `/lib/fleet/industrial.lua`. It validates Tunnel, Excavate Box and Quarry specifications; builds deterministic serpentine box/quarry paths; estimates movement/fuel requirements; summarizes work-slot inventory pressure; and defines a versioned persistent checkpoint schema. This release deliberately does **not** replace the field-verified alpha4.2 physical worker executor. The new foundation is locally syntax/self-tested and is deployed to Fleet profiles for staged integration; Polymania behavior of future industrial execution remains unverified until the later executor stages.
+`0.23.0-alpha.6.1.1` adds `/lib/fleet/security.lua` as endpoint Fleet Guard. Pocket Fleet Control already has a pointer-accessible `Update` action on its second page; this release hardens the receiving turtle/relay path rather than adding a second updater. The guard performs a cheap command-envelope precheck, rate-limits new authenticated command requests per operator boot, applies a shorter freshness window to remote update, persists accepted-update identity across reboot, rejects replay after reboot, and enforces a 30-second update cooldown. Rejected authenticated requests are returned as `fleet_guard:*` results and recorded in bounded `/data/fleet_security_log.json`. Field verification of alpha6.1.1 is pending.
 
 ## Polymania/server observations
 
 - Per-computer storage quota is approximately 8 MiB.
-- Direct wireless communication has been observed beyond 3000 blocks and across dimensions.
-- This global/interdimensional delivery is observed behavior, not a guaranteed modem contract; mesh remains mandatory fallback infrastructure.
-- Server intentionally increased expected modem radius from vanilla 64 to about 96 blocks, which does not explain the observed global behavior by itself.
-- Turtle attack works, including against hostile players inside enemy claims.
-- Turtle dig works on own/allied territory but is blocked by enemy/private claim protection.
-- Turtle place behavior in hostile claims remains unconfirmed.
+- Direct wireless communication has been observed beyond 3000 blocks and across dimensions, but this is observed behavior rather than a permanent transport contract.
+- Server intentionally increased expected ordinary modem radius from vanilla 64 to about 96 blocks; this does not explain the observed global behavior by itself.
+- Turtle movement and attack work in hostile claims; `turtle.dig()` is blocked by hostile/private claim protection.
+- `turtle.place()` behavior in hostile claims remains unconfirmed.
 - No additional entity sensor peripheral is currently available.
-- Optional `keys.*` constants must not be assumed present on every Polymania device/runtime; guard them before using them as Lua table keys.
+- Optional `keys.*` constants must be feature-detected on Polymania.
 
 ## Current production recommendations
 
 - Use `AUTO` Fleet transport unless deliberately testing DIRECT/MESH behavior.
-- Keep dedicated RELAY nodes available; ASSAULT workers should not relay.
-- Use Scheduler AUTO concurrency for large tunnel jobs unless a test specifically requires fixed concurrency.
-- Treat saved performance values as recommendations, not guarantees.
+- Keep dedicated RELAY nodes available; normal workers should not relay.
+- Use Scheduler AUTO concurrency for large Tunnel work unless benchmarking a fixed setting.
 - Do not update an active turtle job.
-- Preserve `/data` during updates.
-- For pointer UI failures, inspect `/data/pointer_ui_error.log` and `/data/pocket_launch_error.log` before changing Fleet cores.
-- Custom trusted environments using `require` must construct `require/package` with `cc.require.make`; inheriting only `_G` is insufficient.
-- Optional key constants must be validated before using them as keyed-table indexes or synthetic key codes.
-- In pointer numeric forms, Left/Right adjust the value, Up selects `Default`, Down selects `OK`, and Enter activates the selected choice.
-- Treat the alpha6.0 industrial planner/checkpoint API as the common contract for new industrial job types; do not duplicate box/quarry planning inside UI or worker code.
+- Preserve `/data`, including Fleet job/checkpoint/security state, during updates.
+- Remote updates may be initiated from Fleet Control with `Update`; alpha6.1.1 applies endpoint freshness/replay/cooldown policy before the unchanged core can schedule the reboot/update.
+- `/data/fleet_security_log.json` is the first diagnostic for a rejected authenticated Fleet command.
+- The CCIP firewall and Fleet Guard protect different paths. Fleet uses its own signed rednet command protocol and therefore needs endpoint policy even when the BASE firewall is enabled.
+- The shared Fleet HMAC key remains an interim trust model. Fleet Guard limits repeated/replayed commands but does not create a second trust domain if that shared key is compromised.
+- Treat Industrial planner/checkpoint values as the common contract for new industrial job types; do not duplicate geometry/fuel/inventory rules in UI or worker code.
 
 ## Open technical debt
 
-1. Defense melee capability assumptions are stale after the server combat fix.
+1. Defense melee assumptions are stale after the server combat fix.
 2. Defense controller stale-return/fail-safe race remains open.
-3. Fleet currently uses one shared HMAC-SHA1 fleet key; capture of one trusted node can compromise the fleet.
+3. Fleet still uses one shared HMAC-SHA1 fleet key; per-device/session and separate maintenance keys remain future work.
 4. HMAC-SHA1 and current entropy/key provisioning are interim.
 5. Common canonical serialization needs review for mixed numeric-key map edge cases.
 6. RTB has no obstacle pathfinding.
@@ -88,24 +71,25 @@ Code inspection found a deterministic Polymania compatibility hazard introduced 
 10. Automatic power-on after placing a turtle/computer block is not guaranteed.
 11. Command freshness depends on runtime epoch behavior.
 12. Global/interdimensional modem delivery implementation remains unknown.
-13. Router/firewall/DDoS GlobalNet design is planned, not implemented.
+13. GlobalNet router/firewall/session/rate-control work is still planned.
 14. RISC-V VM details are unknown and must not be guessed.
-15. Industrial checkpoint recovery cannot guarantee atomic correspondence with physical movement after power loss; reconciliation remains required before claiming crash-atomic excavation.
+15. Industrial checkpoint recovery cannot guarantee atomic correspondence with physical movement after power loss; stronger reconciliation is still required.
 
 ## Immediate roadmap
 
 ### 0.23.0-alpha.6 — Industrial Fleet
 
-- `alpha.6.0`: shared planner/spec/checkpoint/fuel/inventory foundation; physical worker unchanged.
-- next: migrate Tunnel preflight/checkpoint bookkeeping onto the shared foundation while preserving the verified movement loop.
-- then: add Excavate Box execution and field-test single-unit recovery/inventory/fuel behavior.
-- then: add Quarry as a specialization of the same serpentine executor, followed by multi-unit scheduling and Industrial Pocket UI.
+- `alpha.6.0`: shared planner/spec/checkpoint/fuel/inventory foundation — field regression passed.
+- `alpha.6.1`: Tunnel preflight/fuel/checkpoint integration with unchanged physical loop — field-tested successfully.
+- `alpha.6.1.1`: endpoint Fleet Guard and hardened Pocket-triggered remote update — field verification pending.
+- next: `alpha.6.2` Excavate Box execution and single-unit recovery/inventory/fuel field tests.
+- then: Quarry on the same serpentine executor, followed by multi-unit scheduling and Industrial Pocket UI.
 - later within the phase: unload/refuel workflows, stronger restart reconciliation and ENGINEER role separation where appropriate.
 
 ### 0.24 — BASE Pocket OS 2
 
-Broader unified Pocket platform: Fleet/Jobs/Nodes/Network/Diagnostics/Updates/Defense/Messages/Settings, built on the shared pointer/navigation UI.
+Unified Fleet/Jobs/Nodes/Network/Diagnostics/Updates/Defense/Messages/Settings experience built on the shared pointer/navigation UI.
 
 ### Later
 
-GlobalNet/router security, per-device/session keys, DDoS protection, Defense/Raid profile cleanup and eventually RISC-V ABI/VM enablement.
+GlobalNet/router security, per-device/session keys, stronger maintenance authorization, traffic protection, Defense/Raid cleanup and eventually RISC-V ABI/VM enablement.
