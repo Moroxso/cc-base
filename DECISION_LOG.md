@@ -42,7 +42,7 @@ Direct modem/rednet communication was repeatedly observed at >3000 blocks and ac
 
 ## D010 — Routers are future security gateways
 
-Given a potentially global modem broadcast domain, routers are more valuable for authentication, ACL/firewall, service routing, QoS/rate limiting, audit and DDoS mitigation than for range extension. Endpoint enforcement remains mandatory because a router cannot stop raw physical transmissions from reaching another modem.
+Given a potentially global modem broadcast domain, routers are more valuable for authentication, ACL/firewall, service routing, QoS/rate limiting, audit and traffic protection than for range extension. Endpoint enforcement remains mandatory because a router cannot stop raw physical transmissions from reaching another modem.
 
 ## D011 — Do not use industrial digging as raid breaching
 
@@ -91,3 +91,11 @@ The alpha4.2 physical job worker is field-verified at fleet scale and is therefo
 From alpha6.0, Industrial Fleet starts with a pure shared module that owns job-spec validation, deterministic Tunnel/Excavate Box/Quarry planning, conservative fuel projection, work-slot inventory pressure and a versioned checkpoint schema. The existing physical worker remains unchanged in this foundation release. Tunnel migration, Box execution, Quarry execution and UI integration are separate stages and each physical-execution change must be field-tested before the next layer depends on it.
 
 A planner/checkpoint hash or persisted cursor does not make physical turtle movement crash-atomic. Restart recovery must remain conservative and later add explicit reconciliation before claiming exact resume after power loss.
+
+## D021 — Fleet rednet commands require endpoint enforcement
+
+The existing BASE firewall protects the CCIP network stack, while Fleet control uses its own signed rednet protocol. Therefore Fleet workers must enforce command policy locally instead of assuming the CCIP firewall has already filtered the packet.
+
+From alpha6.1.1, `/lib/fleet/security.lua` performs a cheap command-shape precheck before signature verification, limits new authenticated command requests per operator boot, and gives remote update a shorter freshness window plus persistent replay protection and a cooldown across reboot. Rejected authenticated requests are returned as explicit `fleet_guard:*` results and logged in a bounded file. This reduces accidental or repeated command storms without changing the verified physical worker loop.
+
+The guard does not replace the Fleet HMAC trust model. A compromised shared Fleet key still compromises the current fleet; per-device/session and separate maintenance authorization remain future security work.
