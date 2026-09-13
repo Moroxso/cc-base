@@ -1,6 +1,6 @@
 # BASE Development Rules
 
-Last synchronized with `0.23.0-alpha.6.0`.
+Last synchronized with `0.23.0-alpha.6.1.1`.
 
 These rules exist to keep changes auditable and to reduce regressions and context drift.
 
@@ -90,6 +90,18 @@ Benchmarks should keep workload comparable and, when practical, alternate/random
 
 Current Fleet HMAC is an interim protection layer. Do not treat computer ID, channel number or physical range as authentication.
 
+Fleet command traffic uses a dedicated signed rednet protocol and does not automatically pass through the CCIP firewall. Workers and relays therefore enforce `/lib/fleet/security.lua` locally. Keep the endpoint guard independent from the physical worker loop.
+
+Fleet Guard rules:
+
+- reject malformed command envelopes before signature verification when the rejection can be decided cheaply;
+- apply request-rate policy only after a packet has passed Fleet authentication, so unauthenticated traffic cannot consume authenticated rate buckets or fill the audit log;
+- retries with the same `requestId` must remain idempotent and must not consume the rate budget as new commands;
+- remote update has a stricter freshness window than ordinary commands, persists accepted-update identity across reboot, rejects replay after reboot and uses a cooldown to avoid repeated update/reboot loops;
+- blocked authenticated commands should return an explicit policy result rather than disappearing silently;
+- Fleet security logs must be bounded and stored under `/data`;
+- do not claim that Fleet Guard protects against compromise of the shared Fleet key. Per-device/session keys and separate maintenance authorization are separate future work.
+
 Long-term GlobalNet must separate:
 
 - physical modem fabric;
@@ -98,9 +110,9 @@ Long-term GlobalNet must separate:
 - authentication/session identity;
 - firewall/ACL policy;
 - service routing;
-- rate limiting/congestion/DDoS controls.
+- rate limiting/congestion controls.
 
-Because the physical modem domain may be global, endpoints must reject unauthorized traffic themselves; a router cannot physically prevent a hostile sender from transmitting toward an endpoint.
+Because the physical modem domain may be global, endpoints must reject unauthorized traffic themselves; a router cannot physically prevent another modem from transmitting toward an endpoint.
 
 ## 8. Storage/data rules
 
