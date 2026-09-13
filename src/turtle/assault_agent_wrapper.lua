@@ -1,7 +1,8 @@
 local Common = require("lib.fleet.common")
 local Industrial = require("lib.fleet.industrial")
+local Security = require("lib.fleet.security")
 
-local WRAPPER_VERSION = "0.23.0-alpha.6.1"
+local WRAPPER_VERSION = "0.23.0-alpha.6.1.1"
 local CORE_PATH = "/assault_agent_core.lua"
 local CONFIG_PATH = "/data/fleet_agent.json"
 local CORE_JOB_STATE_PATH = "/data/fleet_job.json"
@@ -100,6 +101,11 @@ local localRole = tostring(agentConfig.role or "ASSAULT")
 local latestPose = poseFromConfig(agentConfig)
 local lastJob = copyLastJob(readJson(LAST_JOB_PATH))
 local industrialCheckpoint = nil
+local security = Security.new({
+    computerId = os.getComputerID(),
+    role = localRole,
+    nowMs = Common.nowMs,
+})
 
 do
     local saved = readJson(INDUSTRIAL_CHECKPOINT_PATH)
@@ -279,12 +285,16 @@ local originalVerify = Common.verify
 local originalNewPacket = Common.newPacket
 
 Common.verify = function(packet, key, fleetId)
+    local precheckOk, precheckErr = Security.precheck(packet)
+    if not precheckOk then return false, "fleet_guard:" .. tostring(precheckErr) end
+
     local valid, verifyErr = originalVerify(packet, key, fleetId)
     if not valid then return valid, verifyErr end
 
-    if localRole == "ASSAULT" and commandTargetsThis(packet) and packet.type == "command" then
+    if commandTargetsThis(packet) and packet.type == "command" then
+        security:inspect(packet)
         local payload = type(packet.payload) == "table" and packet.payload or {}
-        if tostring(payload.command or "") == "job_tunnel_roundtrip" then
+        if localRole == "ASSAULT" and tostring(payload.command or "") == "job_tunnel_roundtrip" then
             local args = type(payload.args) == "table" and payload.args or {}
             payload.args = args
             local delay = tonumber(args.stepDelay) or Industrial.DEFAULT_DELAY
@@ -301,9 +311,6 @@ Common.verify = function(packet, key, fleetId)
                 args.industrialFuelRequired = plan.fuelRequired
                 rememberPreflight(requestId, {plan=plan})
             else
-                -- Preserve the core result/command path instead of dropping a valid
-                -- signed command silently. distance=0 makes the unchanged core
-                -- reject it; the outgoing result is rewritten with the planner error.
                 args.distance = 0
                 rememberPreflight(requestId, {error=tostring(planErr or "industrial_preflight")})
             end
@@ -345,6 +352,10 @@ Common.newPacket = function(config, state, messageType, target, payload, ttl)
         payload.version = WRAPPER_VERSION
         payload.capabilities = type(payload.capabilities) == "table" and payload.capabilities or {}
         payload.capabilities.completionLedger = true
+        payload.capabilities.fleetGuard = true
+        payload.capabilities.remoteUpdate = true
+        payload.capabilities.updateReplayProtection = true
+        payload.security = security:status()
         if localRole == "ASSAULT" then
             payload.capabilities.industrialJobs = true
             payload.capabilities.industrialTunnel = true
@@ -352,6 +363,7 @@ Common.newPacket = function(config, state, messageType, target, payload, ttl)
             payload.industrial = industrialSummary(payload.job)
         end
     elseif messageType == "result" then
+        security:rewriteResult(payload)
         payload.lastJob = copyLastJob(lastJob)
         local requestId = tostring(payload.requestId or "")
         local entry = preflight[requestId]
