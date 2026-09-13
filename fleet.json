@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "version": "0.23.0-alpha.6.1",
-  "sourceCommit": "0d94b41f359c53314685cb80f1a4abfd9fda8ffd",
+  "version": "0.23.0-alpha.6.1.1",
+  "sourceCommit": "6cee8c15af8a519a2ffe7ead42b4c7ddad70dd46",
   "hashAlgorithm": "git-blob-sha1",
   "profiles": {
-    "assault": ["common", "industrial", "assault", "assault_core", "startup"],
-    "relay": ["common", "industrial", "assault", "assault_core", "startup"],
+    "assault": ["common", "industrial", "security", "assault", "assault_core", "startup"],
+    "relay": ["common", "industrial", "security", "assault", "assault_core", "startup"],
     "pocket": ["common", "industrial", "pointer_host", "pointer_host_core", "pointer_host_core_nav", "pocket_os", "pocket_control", "pocket_control_core", "pocket_jobs", "pocket_jobs_core", "pocket_scheduler", "pocket_scheduler_core", "pocket_performance", "pocket_performance_core", "pocket_startup"]
   },
   "files": {
@@ -20,6 +20,12 @@
       "target": "/lib/fleet/industrial.lua",
       "size": 15381,
       "hash": "a6a6fc5f01b8a6087ef1d016cad4bd9f10df8c9e"
+    },
+    "security": {
+      "source": "src/lib/fleet/security.lua",
+      "target": "/lib/fleet/security.lua",
+      "size": 13081,
+      "hash": "94c6618036af9b754ec8bc733288753eeb61e44b"
     },
     "pointer_host": {
       "source": "src/lib/pocket/pointer_host_v3.lua",
@@ -42,8 +48,8 @@
     "assault": {
       "source": "src/turtle/assault_agent_wrapper.lua",
       "target": "/assault_agent.lua",
-      "size": 15145,
-      "hash": "19f67bd0e34a26c8bd1659916c5fb2e53e511f18"
+      "size": 15482,
+      "hash": "fa5316070ceacf9d37b902798ccd5fee8832d017"
     },
     "assault_core": {
       "source": "src/turtle/assault_agent.lua",
