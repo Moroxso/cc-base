@@ -1,6 +1,6 @@
 # BASE Architecture
 
-Last synchronized with Fleet release target: `0.23.0-alpha.6.0`.
+Last synchronized with Fleet release target: `0.23.0-alpha.6.1.1`.
 
 This file is an architectural reference. For exact deployed bytes, versions and hashes, `deploy.json`, `packages.json`, `fleet.json` and the source files referenced by those manifests are authoritative.
 
@@ -54,11 +54,15 @@ ASSAULT/ENGINEER workers are endpoints, not general-purpose relays. Dedicated `R
 
 ### Future router role
 
-Routers are intended to become security gateways rather than range extenders. Future GlobalNet design should support router-mediated authentication, ACL/firewall policy, service routing, rate limiting, traffic budgets, DDoS protection, audit/IDS and redundant routers. Endpoints must enforce router/session policy themselves because all nodes may still physically share the same modem fabric.
+Routers are intended to become security gateways rather than range extenders. Future GlobalNet design should support router-mediated authentication, ACL/firewall policy, service routing, rate limiting, traffic budgets, audit/IDS and redundant routers. Endpoints must enforce router/session policy themselves because all nodes may still physically share the same modem fabric.
 
 ## 6. Fleet runtime
 
 Fleet uses a signed packet format (currently HMAC-SHA1 with a shared fleet key; this is interim security). Packets include TTL/deduplication and command idempotency fields.
+
+Fleet control traffic uses a dedicated signed rednet protocol and is not automatically filtered by the CCIP firewall path. From alpha6.1.1, workers and relays also load `/lib/fleet/security.lua` as an endpoint Fleet Guard. The guard rejects malformed command envelopes before signature work where possible, rate-limits new valid command requests per operator boot, and applies a stricter maintenance policy to remote updates. The update policy uses a short freshness window, persistent replay state under `/data`, and a reboot-spanning cooldown. Policy rejects are returned to the Pocket as explicit `fleet_guard:*` results and the bounded audit log is `/data/fleet_security_log.json`.
+
+Fleet Guard is a resilience layer over the current shared-key protocol, not a replacement for it. If the shared Fleet key itself is compromised, the current trust boundary is compromised as well. Per-device/session keys and separate maintenance authorization remain planned security work.
 
 ### Roles
 
@@ -118,6 +122,8 @@ These measurements are server-state observations, not universal constants. Perfo
 
 Numeric forms use pointer-adjustable values instead of requiring CraftOS `read()`/the on-screen keyboard for normal operation. From alpha5.4.5, Left/Right adjust numeric values, Up selects `Default`, Down selects `OK`, and Enter activates the selected choice. Start/Benchmark confirmations may default to `Confirm`; destructive Cancel/Abort/Update confirmations retain `Cancel` as the safe default. Existing Fleet cores remain separate from the pointer wrappers so tested job/network logic is not rewritten solely for UI changes.
 
+Fleet Control already exposes a pointer-accessible `Update` action on its second control page. Alpha6.1.1 hardens the receiving endpoint rather than adding a second update protocol.
+
 ## 10. Defense
 
 Defense Foundation exists but has known technical debt:
@@ -129,7 +135,7 @@ Do not silently reuse Fleet raid behavior as Defense behavior until these are ex
 
 ## 11. Industrial Fleet
 
-`0.23.0-alpha.6.0` introduces `/lib/fleet/industrial.lua` as the shared pure planning/state layer. It does not yet replace the field-verified alpha4.2 turtle movement loop.
+`0.23.0-alpha.6.0` introduced `/lib/fleet/industrial.lua` as the shared pure planning/state layer without replacing the field-verified alpha4.2 turtle movement loop.
 
 The Industrial contract owns:
 
@@ -146,7 +152,7 @@ The staged execution architecture is:
 
 `Pocket/Scheduler spec -> Industrial planner/checkpoint -> verified Fleet worker loops -> turtle primitives`
 
-Tunnel migration must first adopt the shared preflight/checkpoint contract while preserving the already field-tested forward/dig/return loop. Excavate Box and Quarry execution are added only after that migration is verified. Inventory unload/refuel transitions are represented in the checkpoint phase model but their physical station workflow is not yet implemented in alpha6.0.
+Alpha6.1 migrated Tunnel preflight, fuel projection and checkpoint bookkeeping onto that contract while preserving the field-verified physical Tunnel loop. Field testing confirmed normal Tunnel completion and the terminal Industrial checkpoint. Excavate Box is the next physical-execution stage; Quarry follows after Box recovery/inventory/fuel behavior is verified.
 
 The planner can describe intended logical progress, but no checkpoint makes physical movement atomic across an unexpected power loss. Exact restart recovery requires reconciliation between persisted intent, local NAV state and the turtle's actual world position before a job can safely resume.
 
