@@ -2,7 +2,7 @@ local Common = require("lib.fleet.common")
 local Industrial = require("lib.fleet.industrial")
 local Security = require("lib.fleet.security")
 
-local WRAPPER_VERSION = "0.23.0-alpha.6.1.1"
+local WRAPPER_VERSION = "0.23.0-alpha.6.2"
 local CORE_PATH = "/assault_agent_core.lua"
 local CONFIG_PATH = "/data/fleet_agent.json"
 local CORE_JOB_STATE_PATH = "/data/fleet_job.json"
@@ -54,7 +54,7 @@ end
 local function copyLastJob(job)
     if type(job) ~= "table" then return nil end
     return {
-        schema = 1,
+        schema = 2,
         id = tostring(job.id or ""),
         type = tostring(job.type or "tunnel_roundtrip"),
         success = job.success == true,
@@ -63,6 +63,9 @@ local function copyLastJob(job)
         outbound = math.floor(tonumber(job.outbound) or 0),
         returned = math.floor(tonumber(job.returned) or 0),
         distance = math.floor(tonumber(job.distance) or 0),
+        completed = math.floor(tonumber(job.completed) or 0),
+        cursor = math.floor(tonumber(job.cursor) or 0),
+        volume = math.floor(tonumber(job.volume) or 0),
         recoveries = math.floor(tonumber(job.recoveries) or 0),
     }
 end
@@ -111,7 +114,10 @@ do
     local saved = readJson(INDUSTRIAL_CHECKPOINT_PATH)
     if type(saved) == "table" then
         local normalized = Industrial.normalizeCheckpoint(saved)
-        if normalized and normalized.type == Industrial.TYPE_TUNNEL then
+        if normalized and (
+            normalized.type == Industrial.TYPE_TUNNEL
+            or normalized.type == Industrial.TYPE_EXCAVATE
+        ) then
             industrialCheckpoint = normalized
         end
     end
@@ -140,15 +146,27 @@ local function commandTargetsThis(packet)
     return tostring(target) == localRole
 end
 
-local function tunnelSpecFromJob(job)
-    if type(job) ~= "table" or tostring(job.type or "") ~= Industrial.TYPE_TUNNEL then return nil end
+local function industrialSpecFromJob(job)
+    if type(job) ~= "table" then return nil end
+    local kind = tostring(job.type or "")
     local delay = tonumber(job.delay or job.stepDelay) or Industrial.DEFAULT_DELAY
     delay = math.max(Industrial.MIN_DELAY, math.min(Industrial.MAX_DELAY, delay))
-    return {
-        type = Industrial.TYPE_TUNNEL,
-        distance = job.distance,
-        stepDelay = delay,
-    }
+    if kind == Industrial.TYPE_TUNNEL then
+        return {
+            type = Industrial.TYPE_TUNNEL,
+            distance = job.distance,
+            stepDelay = delay,
+        }
+    elseif kind == Industrial.TYPE_EXCAVATE then
+        return {
+            type = Industrial.TYPE_EXCAVATE,
+            width = job.width,
+            length = job.length,
+            height = job.height or job.layers,
+            stepDelay = delay,
+        }
+    end
+    return nil
 end
 
 local function updateLatestPose(payload)
@@ -200,21 +218,23 @@ local function derivedTunnelPose(cp, job)
 end
 
 local function syncIndustrialCheckpoint(job, eventName, pose)
-    local spec = tunnelSpecFromJob(job)
+    local spec = industrialSpecFromJob(job)
     if not spec then return nil end
 
     local id = tostring(job.id or "")
     if id == "" then return nil end
 
+    local jobOrigin = type(job.origin) == "table" and copyPose(job.origin) or nil
     local observedPose = coreJobPose(id) or pose or latestPose
     if not industrialCheckpoint or industrialCheckpoint.jobId ~= id then
-        local cp = Industrial.newCheckpoint(id, spec, observedPose)
+        local cp = Industrial.newCheckpoint(id, spec, jobOrigin or observedPose)
         if not cp then return nil end
         industrialCheckpoint = cp
     end
 
     local cp = industrialCheckpoint
     cp.spec = Industrial.normalizeSpec(spec) or cp.spec
+    if jobOrigin then cp.origin = jobOrigin end
     local plan = Industrial.plan(cp.spec)
     if plan then
         cp.plan = {
@@ -228,21 +248,35 @@ local function syncIndustrialCheckpoint(job, eventName, pose)
     end
 
     local priorPhase = tostring(cp.phase or "")
-    local phase = tostring(job.phase or cp.phase or "OUT")
+    local phase = tostring(job.phase or cp.phase or (cp.type == Industrial.TYPE_TUNNEL and "OUT" or "WORK"))
     if eventName == "DONE" then phase = "DONE"
     elseif eventName == "FAIL" then phase = "FAILED"
     elseif eventName == "RETURN" then phase = "RETURN"
-    elseif (priorPhase == "DONE" or priorPhase == "FAILED") and (eventName == nil or eventName == "") then phase = priorPhase
-    elseif phase ~= "OUT" and phase ~= "RETURN" and phase ~= "DONE" and phase ~= "FAILED" then phase = "OUT" end
+    elseif (priorPhase == "DONE" or priorPhase == "FAILED") and (eventName == nil or eventName == "") then
+        phase = priorPhase
+    elseif cp.type == Industrial.TYPE_TUNNEL then
+        if phase ~= "OUT" and phase ~= "RETURN" and phase ~= "DONE" and phase ~= "FAILED" then phase = "OUT" end
+    else
+        if phase ~= "WORK" and phase ~= "RETURN" and phase ~= "DONE" and phase ~= "FAILED" then phase = "WORK" end
+    end
     cp.phase = phase
 
     cp.progress = type(cp.progress) == "table" and cp.progress or {}
-    cp.progress.completed = math.max(0, math.floor(tonumber(job.outbound) or tonumber(cp.progress.completed) or 0))
-    cp.progress.returned = math.max(0, math.floor(tonumber(job.returned) or tonumber(cp.progress.returned) or 0))
-    cp.progress.cursor = cp.progress.completed
-    cp.progress.layer = 0
+    if cp.type == Industrial.TYPE_TUNNEL then
+        cp.progress.completed = math.max(0, math.floor(tonumber(job.outbound) or tonumber(cp.progress.completed) or 0))
+        cp.progress.returned = math.max(0, math.floor(tonumber(job.returned) or tonumber(cp.progress.returned) or 0))
+        cp.progress.cursor = cp.progress.completed
+        cp.progress.layer = 0
+        cp.pose = copyPose(coreJobPose(id) or derivedTunnelPose(cp, job) or observedPose)
+    else
+        cp.progress.completed = math.max(0, math.floor(tonumber(job.completed) or tonumber(cp.progress.completed) or 0))
+        cp.progress.returned = math.max(0, math.floor(tonumber(job.returned) or tonumber(cp.progress.returned) or 0))
+        cp.progress.cursor = math.max(0, math.floor(tonumber(job.cursor) or tonumber(cp.progress.cursor) or cp.progress.completed))
+        local area = math.max(1, (tonumber(job.width) or 1) * (tonumber(job.length) or 1))
+        cp.progress.layer = math.max(0, math.floor(math.max(0, cp.progress.completed - 1) / area))
+        cp.pose = copyPose(coreJobPose(id) or observedPose)
+    end
 
-    cp.pose = copyPose(coreJobPose(id) or derivedTunnelPose(cp, job) or observedPose)
     cp.reason = tostring(job.reason or cp.reason or "")
     cp.stats = type(cp.stats) == "table" and cp.stats or {}
     cp.stats.moves = math.max(0, cp.progress.completed + cp.progress.returned)
@@ -250,6 +284,10 @@ local function syncIndustrialCheckpoint(job, eventName, pose)
     cp.stats.unloaded = 0
     cp.stats.refuels = math.max(0, math.floor(tonumber(cp.stats.refuels) or 0))
     cp.stats.recoveries = math.max(0, math.floor(tonumber(job.recoveries) or tonumber(cp.stats.recoveries) or 0))
+    cp.inventory = {
+        freeSlots = tonumber(job.inventoryFree),
+        pressure = tonumber(job.inventoryPressure),
+    }
     cp.savedAt = Common.nowMs()
 
     local normalized = Industrial.normalizeCheckpoint(cp)
@@ -271,10 +309,11 @@ local function industrialSummary(job, requestId)
     return {
         engineVersion = Industrial.VERSION,
         checkpointSchema = Industrial.CHECKPOINT_SCHEMA,
-        type = cp and cp.type or Industrial.TYPE_TUNNEL,
+        type = cp and cp.type or (plan and plan.type) or nil,
         phase = cp and cp.phase or nil,
         completed = cp and cp.progress and cp.progress.completed or nil,
         returned = cp and cp.progress and cp.progress.returned or nil,
+        cursor = cp and cp.progress and cp.progress.cursor or nil,
         fuelRequired = plan and plan.fuelRequired or nil,
         fuelReserve = plan and plan.fuelReserve or nil,
         checkpoint = cp and INDUSTRIAL_CHECKPOINT_PATH or nil,
@@ -328,7 +367,7 @@ Common.newPacket = function(config, state, messageType, target, payload, ttl)
         syncIndustrialCheckpoint(payload, eventName, latestPose)
         if eventName == "DONE" or eventName == "FAIL" then
             lastJob = {
-                schema = 1,
+                schema = 2,
                 id = tostring(payload.id or ""),
                 type = tostring(payload.type or "tunnel_roundtrip"),
                 success = eventName == "DONE" and payload.success ~= false,
@@ -337,6 +376,9 @@ Common.newPacket = function(config, state, messageType, target, payload, ttl)
                 outbound = math.floor(tonumber(payload.outbound) or 0),
                 returned = math.floor(tonumber(payload.returned) or 0),
                 distance = math.floor(tonumber(payload.distance) or 0),
+                completed = math.floor(tonumber(payload.completed) or 0),
+                cursor = math.floor(tonumber(payload.cursor) or 0),
+                volume = math.floor(tonumber(payload.volume) or 0),
                 recoveries = math.floor(tonumber(payload.recoveries) or 0),
             }
             writeJson(LAST_JOB_PATH, lastJob)
@@ -359,6 +401,7 @@ Common.newPacket = function(config, state, messageType, target, payload, ttl)
         if localRole == "ASSAULT" then
             payload.capabilities.industrialJobs = true
             payload.capabilities.industrialTunnel = true
+            payload.capabilities.industrialBox = true
             payload.capabilities.industrialCheckpoint = true
             payload.industrial = industrialSummary(payload.job)
         end
