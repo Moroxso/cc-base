@@ -1,6 +1,7 @@
 local Common = require("lib.fleet.common")
+local Industrial = require("lib.fleet.industrial")
 
-local VERSION = "0.23.0-alpha.4.2"
+local VERSION = "0.23.0-alpha.6.2"
 local CONFIG_PATH = "/data/fleet_operator.json"
 local CACHE_PATH = "/data/fleet_units_cache.json"
 
@@ -121,6 +122,8 @@ local function jobSignature(job)
         tostring(job.id or ""),
         tostring(job.phase or ""),
         tostring(job.outbound or 0),
+        tostring(job.completed or 0),
+        tostring(job.cursor or 0),
         tostring(job.returned or 0),
         tostring(job.recoveries or 0),
         tostring(job.stalled or false),
@@ -186,11 +189,20 @@ local function handlePacket(packet,protocol)
             if eventName=="START" or eventName=="RETURN" or eventName=="RESUME" or eventName=="STALLED" then
                 applyJob(u,{
                     id=p.id,type=p.type,phase=p.phase,outbound=p.outbound,returned=p.returned,
-                    distance=p.distance,reason=p.reason,delay=p.delay,recoveries=p.recoveries,
+                    distance=p.distance,width=p.width,length=p.length,height=p.height,layers=p.layers,
+                    volume=p.volume,completed=p.completed,cursor=p.cursor,origin=p.origin,
+                    fuelRequired=p.fuelRequired,inventoryFree=p.inventoryFree,inventoryPressure=p.inventoryPressure,
+                    reason=p.reason,delay=p.delay,recoveries=p.recoveries,
                     stalled=eventName=="STALLED" or p.stalled,
                 },now)
                 u.state=eventName=="STALLED" and "JOB:STALLED" or ("JOB:"..tostring(p.phase or eventName))
-                message=string.format("#%s %s %s %s/%s",unitId,eventName,tostring(p.phase or "?"),tostring(p.outbound or 0),tostring(p.distance or 0))
+                local current,total
+                if p.type==Industrial.TYPE_EXCAVATE then
+                    if p.phase=="WORK" then current,total=p.completed,p.volume else current,total=p.returned,p.completed end
+                else
+                    if p.phase=="OUT" then current,total=p.outbound,p.distance else current,total=p.returned,p.outbound end
+                end
+                message=string.format("#%s %s %s %s/%s",unitId,eventName,tostring(p.phase or "?"),tostring(current or 0),tostring(total or 0))
             else
                 applyJob(u,nil,now)
                 u.state=eventName=="DONE" and "JOB_DONE" or "JOB_FAILED"
@@ -218,7 +230,7 @@ local function handlePacket(packet,protocol)
             if not any then pending[rid]=nil end
         end
 
-        if p.command=="job_tunnel_roundtrip" or p.command=="job_cancel" then
+        if p.command=="job_tunnel_roundtrip" or p.command=="job_excavate_box" or p.command=="job_cancel" then
             message=string.format("#%s %s %s",tostring(p.unit or packet.origin),p.ok and "ACK" or "FAIL",tostring(p.detail or ""))
         end
     end
@@ -242,6 +254,18 @@ local function onlineCounts()
         end
     end
     return assault,relayCount,busy,stalled
+end
+
+local function onlineAssaults()
+    local now=Common.nowMs()
+    local list={}
+    for _,u in pairs(units) do
+        if now-(u.lastSeen or 0)<=UNIT_STALE_MS and u.role=="ASSAULT" then
+            list[#list+1]=u
+        end
+    end
+    table.sort(list,function(a,b) return a.id<b.id end)
+    return list
 end
 
 local function pendingCount()
@@ -331,6 +355,30 @@ local function textAt(y,text,color)
     term.write(tostring(text):sub(1,w))
 end
 
+local function jobProgress(job)
+    if type(job)~="table" then return "IDLE" end
+    local phase=tostring(job.phase or "?")
+    local current,total
+    if tostring(job.type or "")==Industrial.TYPE_EXCAVATE then
+        if phase=="WORK" then
+            current=tonumber(job.completed) or 0
+            total=tonumber(job.volume) or 0
+        else
+            current=tonumber(job.returned) or 0
+            total=tonumber(job.completed) or 0
+        end
+    else
+        if phase=="OUT" then
+            current=tonumber(job.outbound) or 0
+            total=tonumber(job.distance) or 0
+        else
+            current=tonumber(job.returned) or 0
+            total=tonumber(job.outbound) or 0
+        end
+    end
+    return phase,current,total
+end
+
 local function draw()
     local w,h=term.getSize()
     term.setBackgroundColor(colors.black)
@@ -352,21 +400,14 @@ local function draw()
 
     local row=8
     local now=Common.nowMs()
-    local list={}
-    for _,u in pairs(units) do
-        if now-(u.lastSeen or 0)<=UNIT_STALE_MS and u.role=="ASSAULT" then list[#list+1]=u end
-    end
-    table.sort(list,function(a,b) return a.id<b.id end)
-
+    local list=onlineAssaults()
     local visible=math.max(1,h-13)
     for i=1,math.min(#list,visible) do
         local u=list[i]
         local job="IDLE"
         local color=colors.white
         if type(u.job)=="table" then
-            local phase=tostring(u.job.phase or "?")
-            local current=tonumber(phase=="OUT" and u.job.outbound or u.job.returned) or 0
-            local total=tonumber(phase=="OUT" and u.job.distance or u.job.outbound) or 0
+            local phase,current,total=jobProgress(u.job)
             local isStalled=u.job.stalled or (u.jobProgressSeen>0 and now-u.jobProgressSeen>JOB_STALE_MS)
             if isStalled then
                 job=string.format("STALLED %s %d/%d",phase,current,total)
@@ -381,8 +422,8 @@ local function draw()
     end
 
     textAt(h-3,message,colors.orange)
-    textAt(h-2,"T tunnel roundtrip   C cancel/return",colors.lightGray)
-    textAt(h-1,"U update fleet       Q back",colors.lightGray)
+    textAt(h-2,"T tunnel   X excavate box   C cancel",colors.lightGray)
+    textAt(h-1,"U update fleet              Q back",colors.lightGray)
 end
 
 local function startTunnel()
@@ -407,10 +448,57 @@ local function startTunnel()
     message=string.format("Tunnel %d queued for %d units",distance,assault)
 end
 
+local function startBox()
+    sendPacket("discover","*",{operator=os.getComputerID(),app="jobs",version=VERSION})
+    local list=onlineAssaults()
+    if #list==0 then message="No online ASSAULT units"; return end
+
+    term.clear()
+    term.setCursorPos(1,1)
+    print("Excavate Box / single-unit field mode")
+    local unitId=math.floor(tonumber(ask("Unit ID",list[1].id)) or 0)
+    local unit=units[unitId]
+    if not unit or Common.nowMs()-(unit.lastSeen or 0)>UNIT_STALE_MS or unit.role~="ASSAULT" then
+        message="Selected ASSAULT unit is not online"
+        return
+    end
+    if not (unit.capabilities and unit.capabilities.industrialBox) then
+        message="Unit #"..tostring(unitId).." lacks alpha6.2 Box capability"
+        return
+    end
+    if type(unit.job)=="table" then
+        message="Unit #"..tostring(unitId).." already has an active job"
+        return
+    end
+
+    local width=math.floor(tonumber(ask("Width blocks",3)) or 0)
+    local length=math.floor(tonumber(ask("Length blocks",4)) or 0)
+    local height=math.floor(tonumber(ask("Height blocks",2)) or 0)
+    local delay=tonumber(ask("Step delay seconds",0.15)) or 0.15
+    local plan,planErr=Industrial.plan({
+        type=Industrial.TYPE_EXCAVATE,width=width,length=length,height=height,stepDelay=delay,
+    })
+    if not plan then message="Box invalid: "..tostring(planErr); return end
+
+    if not confirm(string.format(
+        "Start Box %dx%dx%d on #%d? Fuel reserve %d.",
+        width,length,height,unitId,plan.fuelRequired
+    )) then
+        message="Box cancelled"
+        return
+    end
+
+    local jobId=string.format("BOX-%d-%d",os.getComputerID(),Common.nowMs())
+    issue("job_excavate_box",{
+        jobId=jobId,width=width,length=length,height=height,stepDelay=delay,
+    },unitId)
+    message=string.format("Box %dx%dx%d queued for #%d",width,length,height,unitId)
+end
+
 local function cancelJobs()
     local _,_,busy=onlineCounts()
     if busy==0 then message="No reported active jobs"; return end
-    if not confirm("Abort active jobs and return along tunnel?") then message="Abort cancelled"; return end
+    if not confirm("Abort active jobs and return along recorded path?") then message="Abort cancelled"; return end
     issue("job_cancel",{},"ASSAULT")
     message="Abort/return queued"
 end
@@ -463,6 +551,7 @@ local function uiLoop()
         local e,a=os.pullEvent()
         if e=="key" then
             if a==keys.t then startTunnel()
+            elseif a==keys.x then startBox()
             elseif a==keys.c then cancelJobs()
             elseif a==keys.u then updateFleet()
             elseif a==keys.q or a==keys.escape or a==keys.leftShift then
