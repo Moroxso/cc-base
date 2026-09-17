@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version": "0.23.0-alpha.6.2",
-  "sourceCommit": "4acad1855623927f21268dcc1a6b2575efea6af7",
+  "version": "0.23.0-alpha.6.2.1",
+  "sourceCommit": "dd926b355c436febb89a2467f075ce0f0f70e975",
   "hashAlgorithm": "git-blob-sha1",
   "profiles": {
     "assault": ["common", "industrial_base", "industrial", "industrial_box", "security", "assault", "assault_guarded", "assault_core", "startup"],
     "relay": ["common", "industrial_base", "industrial", "industrial_box", "security", "assault", "assault_guarded", "assault_core", "startup"],
-    "pocket": ["common", "industrial_base", "industrial", "pointer_host", "pointer_host_core", "pointer_host_core_nav", "pocket_os", "pocket_control", "pocket_control_core", "pocket_jobs", "pocket_jobs_core", "pocket_box", "pocket_box_core", "pocket_scheduler", "pocket_scheduler_core", "pocket_performance", "pocket_performance_core", "pocket_startup"]
+    "pocket": ["common", "industrial_base", "industrial", "pointer_host", "pointer_host_core", "pointer_host_core_nav", "pocket_os", "pocket_control", "pocket_control_core_legacy", "pocket_control_core", "pocket_jobs", "pocket_jobs_core", "pocket_box", "pocket_box_core_legacy", "pocket_box_core", "pocket_scheduler", "pocket_scheduler_core", "pocket_performance", "pocket_performance_core", "pocket_startup"]
   },
   "files": {
     "common": {
@@ -81,11 +81,17 @@
       "size": 178,
       "hash": "4c2639093a9c8d84e97554491613c4f17cf106c9"
     },
-    "pocket_control_core": {
+    "pocket_control_core_legacy": {
       "source": "src/pocket/fleet_control.lua",
-      "target": "/fleet_control_core.lua",
+      "target": "/fleet_control_core_legacy.lua",
       "size": 17542,
       "hash": "54b3adc7701ef222676f299c461bfdc291db62ff"
+    },
+    "pocket_control_core": {
+      "source": "src/pocket/fleet_control_maintenance_v2.lua",
+      "target": "/fleet_control_core.lua",
+      "size": 2762,
+      "hash": "65c4051fcd3f0c2531e42da5c9567895a5bcac1b"
     },
     "pocket_jobs": {
       "source": "src/pocket/fleet_jobs_pointer_v2.lua",
@@ -105,11 +111,17 @@
       "size": 162,
       "hash": "c6a472b1ba99c07edee634635d641605feb77365"
     },
-    "pocket_box_core": {
+    "pocket_box_core_legacy": {
       "source": "src/pocket/fleet_box.lua",
-      "target": "/fleet_box_core.lua",
+      "target": "/fleet_box_core_legacy.lua",
       "size": 8293,
       "hash": "a7c303a59c381af1561d31315fffaf171f39b963"
+    },
+    "pocket_box_core": {
+      "source": "src/pocket/fleet_box_refresh_v2.lua",
+      "target": "/fleet_box_core.lua",
+      "size": 2310,
+      "hash": "7d2c16f0567d79a717f2297f1b13046c233f8cb0"
     },
     "pocket_scheduler": {
       "source": "src/pocket/fleet_scheduler_pointer_v2.lua",
