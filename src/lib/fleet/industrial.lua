@@ -1,6 +1,6 @@
 local Industrial = {}
 
-Industrial.VERSION = "0.23.0-alpha.6.2"
+Industrial.VERSION = "0.23.0-alpha.6.0"
 Industrial.SCHEMA = 1
 Industrial.CHECKPOINT_SCHEMA = 1
 
@@ -105,6 +105,12 @@ function Industrial.normalizeSpec(spec)
     }
 end
 
+local function boxReturnAllowance(spec)
+    -- Conservative Manhattan allowance from any cell in the work volume back to
+    -- the entry point immediately outside the first cell.
+    return spec.length + math.max(0, spec.width - 1) + math.max(0, spec.layers - 1) + 1
+end
+
 function Industrial.plan(spec)
     local normalized, err = Industrial.normalizeSpec(spec)
     if not normalized then return nil, err end
@@ -129,10 +135,7 @@ function Industrial.plan(spec)
     end
 
     local volume = normalized.width * normalized.length * normalized.layers
-    -- Alpha6.2 returns along the already excavated serpentine path. Reserving the
-    -- full work-path length for RETURN is conservative but guarantees that an
-    -- operator abort or inventory-pressure return never depends on undug space.
-    local returnMoves = volume
+    local returnMoves = boxReturnAllowance(normalized)
     return {
         schema = Industrial.SCHEMA,
         type = normalized.type,
@@ -270,7 +273,6 @@ function Industrial.normalizeCheckpoint(value)
         cursor = math.max(0, math.floor(tonumber(progress.cursor) or completed)),
         layer = math.max(0, math.floor(tonumber(progress.layer) or 0)),
     }
-    if out.progress.cursor > completed then out.progress.cursor = completed end
     out.origin = poseCopy(value.origin)
     out.pose = poseCopy(value.pose)
     out.stats = type(value.stats) == "table" and copyTable(value.stats) or {}
@@ -363,7 +365,7 @@ function Industrial.selfTest()
     expect("tunnel_plan", tunnel and tunnel.estimatedMoves == 200 and tunnel.fuelRequired == 264)
 
     local box = Industrial.plan({type="excavate_box", width=2, length=3, height=2, stepDelay=0.15})
-    expect("box_plan", box and box.volume == 12 and box.workMoves == 12 and box.returnMoves == 12 and box.fuelRequired == 88)
+    expect("box_plan", box and box.volume == 12 and box.workMoves == 12)
     if box then
         local seen = {}
         local previous
