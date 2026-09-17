@@ -1,6 +1,6 @@
 # BASE Project State
 
-Last synchronized release target: `0.23.0-alpha.6.2`.
+Last synchronized release target: `0.23.0-alpha.6.2.1`.
 
 Canonical priority when information conflicts:
 
@@ -34,13 +34,17 @@ The `0.23.0-alpha.4.2` physical Tunnel executor remains the stable turtle core. 
 
 `0.23.0-alpha.6.1.1` added endpoint Fleet Guard. Remote update from Pocket Fleet Control, the reboot-spanning update replay state and the 30-second update cooldown were field-tested successfully on Polymania. Fleet Guard remains a resilience layer over the shared Fleet HMAC key, not a separate authorization domain.
 
-`0.23.0-alpha.6.2` is the current field-test target. It adds the first physical Excavate Box executor as a **single-unit** job without replacing the field-verified Tunnel core. `/assault_agent.lua` is now a thin Box ownership layer; it delegates normal Fleet commands to the alpha6.1.1 guarded wrapper at `/assault_agent_guarded.lua`, which in turn loads the unchanged alpha4.2 `/assault_agent_core.lua`.
+`0.23.0-alpha.6.2` adds the first physical Excavate Box executor as a **single-unit** job without replacing the field-verified Tunnel core. `/assault_agent.lua` is a thin Box ownership layer; it delegates normal Fleet commands to the alpha6.1.1 guarded wrapper at `/assault_agent_guarded.lua`, which in turn loads the unchanged alpha4.2 `/assault_agent_core.lua`.
 
-The alpha6.2 Box executor uses the shared deterministic serpentine cell order, enters the first work cell from the origin, traverses adjacent cells, and returns by exactly reversing the excavated prefix. The runtime therefore reserves worst-case movement fuel as `2 * volume + 64`; the deployed Industrial compatibility layer reports that same exact-retrace return budget. Slots 1–4 remain fuel slots and slots 5–16 remain work inventory.
+The alpha6.2 Box executor uses the shared deterministic serpentine cell order, enters the first work cell from the origin, traverses adjacent cells, and returns by exactly reversing the excavated prefix. The runtime reserves worst-case movement fuel as `2 * volume + 64`; the deployed Industrial compatibility layer reports that same exact-retrace return budget. Slots 1–4 remain fuel slots and slots 5–16 remain work inventory.
 
 Box writes `/data/fleet_industrial_job.json` after each confirmed movement. Before each physical move it persists a movement intent. If the computer restarts while an intent is still unresolved, alpha6.2 deliberately enters `JOB:RECOVERY_REQUIRED` instead of guessing whether the physical movement happened. A clean checkpoint without unresolved intent may resume. Inventory pressure or insufficient safe return fuel causes a return toward origin; automatic unload/refuel station workflows are not implemented yet.
 
-For staged field testing, Box has a separate pointer-compatible Pocket program at `/fleet_box.lua`. It accepts one explicit turtle ID plus Width/Length/Height/Delay. Group scheduling, integration into the normal Fleet Jobs menu and multi-unit Box partitioning are intentionally deferred until single-unit geometry, return, cancel and recovery behavior are field-verified.
+Single-unit Box geometry and exact return are now field-verified on Polymania, including the requested flat and multi-layer baseline tests. Cancel/return, unresolved-intent recovery and inventory/fuel edge behavior remain separate field-verification targets before Box is promoted to multi-unit scheduling.
+
+For staged testing, Box still has a separate pointer-compatible Pocket program at `/fleet_box.lua`. It accepts one explicit turtle ID plus Width/Length/Height/Delay. Integration into the normal Fleet Jobs/Pocket menu is now an explicit roadmap requirement rather than the final user-facing architecture.
+
+`0.23.0-alpha.6.2.1` is a Pocket maintenance hotfix. Field testing exposed that Fleet Control treated a stale status-cache entry as a hard blocker even for signed `Update`, and standalone Box initially waited only `0.8 s` for discovery even though the turtle discovery-response jitter can approach `1.95 s`. The hotfix keeps fresh status mandatory for movement/job safety, but allows signed maintenance Update to probe a known stale unit ID and rely on ACK/timeout for delivery. Box initial discovery now waits `2.5 s`. Turtle physical executors and Fleet Guard are unchanged. Field verification of this Pocket-only hotfix is pending.
 
 ## Polymania/server observations
 
@@ -51,6 +55,7 @@ For staged field testing, Box has a separate pointer-compatible Pocket program a
 - `turtle.place()` behavior in hostile claims remains unconfirmed.
 - No additional entity sensor peripheral is currently available.
 - Optional `keys.*` constants must be feature-detected on Polymania.
+- Fleet discovery replies are intentionally jittered by unit ID; callers that require a fresh status must allow for the full response window rather than assuming a sub-second reply.
 
 ## Current production recommendations
 
@@ -60,11 +65,13 @@ For staged field testing, Box has a separate pointer-compatible Pocket program a
 - Do not update an active turtle job.
 - Preserve `/data`, including Fleet job/checkpoint/security state, during updates.
 - Remote updates may be initiated from Fleet Control with `Update`; Fleet Guard applies endpoint freshness/replay/cooldown policy before the unchanged core can schedule reboot/update.
+- A stale Pocket status-cache entry must not be treated as proof that a known unit is unreachable for maintenance. `alpha6.2.1` allows direct signed Update probes to known IDs and uses ACK/timeout as the delivery result.
+- Physical movement and industrial job launch still require fresh unit status where the client uses freshness as a safety gate.
 - `/data/fleet_security_log.json` is the first diagnostic for a rejected authenticated Fleet command.
 - The CCIP firewall and Fleet Guard protect different paths. Fleet uses its own signed rednet command protocol and therefore needs endpoint policy even when the BASE firewall is enabled.
 - The shared Fleet HMAC key remains an interim trust model. Fleet Guard limits repeated/replayed commands but does not create a second trust domain if that shared key is compromised.
 - Treat the shared Industrial API as the source of truth for geometry/fuel/checkpoint rules.
-- Until alpha6.2 is field-verified, run Excavate Box on one test turtle only and use `/fleet_box.lua`; do not treat it as a fleet-scale production primitive yet.
+- Excavate Box is field-verified for single-unit baseline geometry/return, but remains a staged primitive until cancel/recovery/edge tests and menu integration are completed.
 
 ## Open technical debt
 
@@ -84,6 +91,7 @@ For staged field testing, Box has a separate pointer-compatible Pocket program a
 14. RISC-V VM details are unknown and must not be guessed.
 15. Box recovery after an unresolved movement intent deliberately requires operator reconciliation; automatic physical reconciliation is not implemented.
 16. Industrial unload/refuel stations and multi-unit Box/Quarry partitioning are not implemented.
+17. Box remains a standalone Pocket tool and must be integrated into the normal Jobs/Pocket menu after the single-unit executor and recovery semantics are stabilized.
 
 ## Immediate roadmap
 
@@ -92,9 +100,11 @@ For staged field testing, Box has a separate pointer-compatible Pocket program a
 - `alpha.6.0`: shared planner/spec/checkpoint/fuel/inventory foundation — field regression passed.
 - `alpha.6.1`: Tunnel preflight/fuel/checkpoint integration with unchanged physical loop — field-tested successfully.
 - `alpha.6.1.1`: endpoint Fleet Guard and hardened Pocket-triggered remote update — field-tested successfully.
-- `alpha.6.2`: single-unit Excavate Box executor, exact reverse return, write-intent checkpointing and standalone Pocket test UI — implementation complete, field verification pending.
-- next after alpha6.2 verification: recovery/inventory/fuel edge tests, then Quarry on the same executor model.
-- then: multi-unit industrial scheduling and integration into the normal Jobs/Pocket UI.
+- `alpha.6.2`: single-unit Excavate Box executor, exact reverse return, write-intent checkpointing and standalone Pocket test UI — baseline geometry and return field-tested successfully.
+- `alpha.6.2.1`: Pocket stale-cache maintenance/discovery hotfix — implementation complete, field verification pending.
+- next: controlled Box cancel/return and recovery/inventory/fuel edge tests.
+- then: Quarry on the same executor model.
+- then: multi-unit industrial scheduling and integration of Box/Quarry into the normal Jobs/Pocket menu.
 - later within the phase: unload/refuel workflows, stronger restart reconciliation and ENGINEER role separation where appropriate.
 
 ### 0.24 — BASE Pocket OS 2
