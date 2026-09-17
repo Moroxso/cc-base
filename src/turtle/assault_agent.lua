@@ -1,6 +1,7 @@
 local Common = require("lib.fleet.common")
+local Industrial = require("lib.fleet.industrial")
 
-local VERSION = "0.23.0-alpha.4.2"
+local VERSION = "0.23.0-alpha.6.2"
 local CONFIG_PATH = "/data/fleet_agent.json"
 local JOB_STATE_PATH = "/data/fleet_job.json"
 local FORCE_UPDATE_PATH = "/data/fleet_force_update"
@@ -279,6 +280,29 @@ local function ensureTool(kind)
     return false, kind .. "_missing"
 end
 
+local function workInventorySummary()
+    return Industrial.inventorySummary(function(slot)
+        local ok, count = pcall(turtle.getItemCount, slot)
+        return ok and tonumber(count) or 0
+    end)
+end
+
+local function selectWorkSlot()
+    for slot=Industrial.WORK_SLOT_FIRST,Industrial.WORK_SLOT_LAST do
+        local okSpace, space = pcall(turtle.getItemSpace, slot)
+        if okSpace and tonumber(space) and tonumber(space)>0 then
+            pcall(turtle.select, slot)
+            return true
+        end
+        local okCount, count = pcall(turtle.getItemCount, slot)
+        if okCount and (tonumber(count) or 0)==0 then
+            pcall(turtle.select, slot)
+            return true
+        end
+    end
+    return false
+end
+
 local function capabilitySnapshot()
     return {
         move=true,
@@ -291,6 +315,7 @@ local function capabilitySnapshot()
         jobs=true,
         jobWorker=true,
         jobResume=true,
+        industrialBox=config.role=="ASSAULT",
     }
 end
 
@@ -426,6 +451,17 @@ local function jobPayload(job)
         outbound=job.outbound,
         returned=job.returned,
         distance=job.distance,
+        width=job.width,
+        length=job.length,
+        height=job.height,
+        layers=job.layers,
+        volume=job.volume,
+        completed=job.completed,
+        cursor=job.cursor,
+        origin=job.origin,
+        fuelRequired=job.fuelRequired,
+        inventoryFree=job.inventoryFree,
+        inventoryPressure=job.inventoryPressure,
         reason=job.reason,
         delay=job.delay,
         recoveries=job.recoveries or 0,
@@ -439,7 +475,7 @@ local function saveJobState()
         return true
     end
     return writeJson(JOB_STATE_PATH, {
-        schema=2,
+        schema=3,
         savedAt=Common.nowMs(),
         job=jobPayload(activeJob),
         startHeading=activeJob.startHeading,
@@ -539,6 +575,69 @@ local function startTunnelJob(args, requestId)
     return true, "job_started:"..tostring(distance)
 end
 
+local function startBoxJob(args, requestId)
+    if config.role~="ASSAULT" then return false, "assault_only" end
+    if activeJob then return false, "job_busy" end
+
+    local plan, planErr=Industrial.plan({
+        type=Industrial.TYPE_EXCAVATE,
+        width=args.width,
+        length=args.length,
+        height=args.height,
+        stepDelay=args.stepDelay,
+    })
+    if not plan then return false, "industrial_preflight:"..tostring(planErr) end
+
+    local toolOk, toolErr=ensureTool("pickaxe")
+    if not toolOk then return false, toolErr end
+
+    local inventory=workInventorySummary()
+    if not inventory then return false, "inventory_unavailable" end
+    if inventory.shouldUnload then
+        return false, "inventory_not_ready:free="..tostring(inventory.freeSlots)
+    end
+
+    local fuelOk, fuel=refuelTo(plan.fuelRequired)
+    if not fuelOk then
+        return false, "insufficient_fuel:"..tostring(fuel or "?").."/"..tostring(plan.fuelRequired)
+    end
+
+    rtbActive=false
+    rtbReason=""
+    activeJob={
+        id=tostring(args.jobId or requestId or ("box-"..Common.nowMs())),
+        type=Industrial.TYPE_EXCAVATE,
+        phase="WORK",
+        width=plan.spec.width,
+        length=plan.spec.length,
+        height=plan.spec.height,
+        layers=plan.spec.layers,
+        volume=plan.volume,
+        completed=0,
+        cursor=0,
+        returned=0,
+        delay=plan.spec.stepDelay,
+        reason="",
+        startHeading=config.heading,
+        origin={
+            x=navPosition.x,y=navPosition.y,z=navPosition.z,
+            heading=config.heading,frame=navPosition.frame,
+        },
+        fuelRequired=plan.fuelRequired,
+        inventoryFree=inventory.freeSlots,
+        inventoryPressure=inventory.pressure,
+        recoveries=0,
+        initialDelay=plan.spec.stepDelay+(os.getComputerID()%24)*JOB_START_STAGGER,
+    }
+    state="JOB:WORK 0/"..tostring(plan.volume)
+    lastJobProgressMs=Common.nowMs()
+    saveJobState()
+    emitJobEvent("START", activeJob)
+    requestStatusSoon(0)
+    wakeJobWorker()
+    return true, string.format("box_started:%dx%dx%d",plan.spec.width,plan.spec.length,plan.spec.height)
+end
+
 local function requestJobReturn(reason)
     if not activeJob then return false, "no_active_job" end
     if activeJob.reason=="" then activeJob.reason=tostring(reason or "OPERATOR_ABORT") end
@@ -551,10 +650,166 @@ local function requestJobReturn(reason)
     return true, "returning"
 end
 
+local function boxSpec(job)
+    return {
+        type=Industrial.TYPE_EXCAVATE,
+        width=job.width,
+        length=job.length,
+        height=job.height or job.layers,
+        stepDelay=job.delay,
+    }
+end
+
+local function boxPosition(job,index)
+    index=math.floor(tonumber(index) or 0)
+    if index<=0 then return {x=0,y=0,z=-1,index=0} end
+    return Industrial.cellAt(boxSpec(job),index)
+end
+
+local function boxHeading(job,dx,dz)
+    local start=math.floor(tonumber(job.startHeading) or 0)%4
+    if dz==1 and dx==0 then return start end
+    if dz==-1 and dx==0 then return (start+2)%4 end
+    if dx==1 and dz==0 then return (start+1)%4 end
+    if dx==-1 and dz==0 then return (start+3)%4 end
+    return nil
+end
+
+local function excavateDirection(direction)
+    local detected=false
+    if direction=="down" then
+        pcall(function() detected=turtle.detectDown() end)
+    elseif direction=="up" then
+        pcall(function() detected=turtle.detectUp() end)
+    else
+        pcall(function() detected=turtle.detect() end)
+    end
+    if not detected then return true end
+
+    local toolOk,toolErr=ensureTool("pickaxe")
+    if not toolOk then return false,toolErr end
+    if not selectWorkSlot() then return false,"inventory_full" end
+
+    local fn=direction=="down" and turtle.digDown
+        or direction=="up" and turtle.digUp
+        or turtle.dig
+    local dug,digErr=fn()
+    if not dug then return false,"dig_failed:"..tostring(digErr or "blocked") end
+    return true
+end
+
+local function moveBoxBetween(job,fromIndex,toIndex,excavate)
+    local from,fromErr=boxPosition(job,fromIndex)
+    if not from then return false,tostring(fromErr or "box_from") end
+    local to,toErr=boxPosition(job,toIndex)
+    if not to then return false,tostring(toErr or "box_to") end
+
+    local dx,dy,dz=to.x-from.x,to.y-from.y,to.z-from.z
+    if math.abs(dx)+math.abs(dy)+math.abs(dz)~=1 then return false,"box_path_gap" end
+
+    if dy~=0 then
+        local direction=dy<0 and "down" or "up"
+        if excavate then
+            local ok,err=excavateDirection(direction)
+            if not ok then return false,err end
+        end
+        return move(direction)
+    end
+
+    local heading=boxHeading(job,dx,dz)
+    if heading==nil then return false,"box_heading" end
+    local faced,faceErr=face(heading)
+    if not faced then return false,"turn_failed:"..tostring(faceErr or "blocked") end
+    if excavate then
+        local ok,err=excavateDirection("forward")
+        if not ok then return false,err end
+    end
+    return move("forward")
+end
+
+local function boxJobStep(job)
+    if job.phase=="WORK" then
+        if (tonumber(job.completed) or 0)>=job.volume then
+            switchJobToReturn()
+            return
+        end
+
+        local inventory=workInventorySummary()
+        if inventory then
+            job.inventoryFree=inventory.freeSlots
+            job.inventoryPressure=inventory.pressure
+            if inventory.shouldUnload then
+                switchJobToReturn("INVENTORY_PRESSURE")
+                return
+            end
+        end
+
+        local fromIndex=math.max(0,math.floor(tonumber(job.cursor) or tonumber(job.completed) or 0))
+        local toIndex=math.floor(tonumber(job.completed) or 0)+1
+        local moved,moveErr=moveBoxBetween(job,fromIndex,toIndex,true)
+        if not moved then
+            switchJobToReturn("box_work_failed:"..tostring(moveErr or "blocked"))
+            return
+        end
+
+        job.completed=toIndex
+        job.cursor=toIndex
+        state="JOB:WORK "..job.completed.."/"..job.volume
+
+        local after=workInventorySummary()
+        if after then
+            job.inventoryFree=after.freeSlots
+            job.inventoryPressure=after.pressure
+        end
+        markJobProgress()
+
+        if job.completed>=job.volume then
+            switchJobToReturn()
+        elseif after and after.shouldUnload then
+            switchJobToReturn("INVENTORY_PRESSURE")
+        end
+        return
+    end
+
+    if job.phase=="RETURN" then
+        local cursor=math.max(0,math.floor(tonumber(job.cursor) or 0))
+        if cursor<=0 then
+            face(job.startHeading)
+            finishJob(job.reason=="",job.reason~="" and job.reason or "complete")
+            return
+        end
+
+        local moved,moveErr=moveBoxBetween(job,cursor,cursor-1,false)
+        if not moved then
+            finishJob(false,"return_blocked:"..tostring(moveErr or "blocked"))
+            return
+        end
+
+        job.cursor=cursor-1
+        job.returned=math.floor(tonumber(job.returned) or 0)+1
+        state="JOB:RETURN "..job.returned.."/"..tostring(job.completed or 0)
+        markJobProgress()
+
+        if job.cursor<=0 then
+            face(job.startHeading)
+            finishJob(job.reason=="",job.reason~="" and job.reason or "complete")
+        end
+        return
+    end
+
+    finishJob(false,"bad_box_phase:"..tostring(job.phase))
+end
+
 local function jobStep()
     local job=activeJob
     if not job then return end
 
+    if job.type==Industrial.TYPE_EXCAVATE then
+        boxJobStep(job)
+        return
+    end
+
+    -- The field-verified alpha4.2 Tunnel path remains unchanged below.
     if job.phase=="OUT" then
         if job.outbound>=job.distance then
             switchJobToReturn()
@@ -614,32 +869,72 @@ local function restoreJobState()
     local saved=readJson(JOB_STATE_PATH)
     if type(saved)~="table" or type(saved.job)~="table" then return false end
     local job=saved.job
-    if job.type~="tunnel_roundtrip" then return false end
 
-    local distance=math.floor(tonumber(job.distance) or 0)
-    local outbound=math.floor(tonumber(job.outbound) or 0)
-    local returned=math.floor(tonumber(job.returned) or 0)
-    local phase=tostring(job.phase or "")
-    if distance<1 or distance>JOB_MAX_DISTANCE then return false end
-    if phase~="OUT" and phase~="RETURN" then return false end
+    if job.type=="tunnel_roundtrip" then
+        local distance=math.floor(tonumber(job.distance) or 0)
+        local outbound=math.floor(tonumber(job.outbound) or 0)
+        local returned=math.floor(tonumber(job.returned) or 0)
+        local phase=tostring(job.phase or "")
+        if distance<1 or distance>JOB_MAX_DISTANCE then return false end
+        if phase~="OUT" and phase~="RETURN" then return false end
 
-    outbound=math.max(0, math.min(distance, outbound))
-    returned=math.max(0, math.min(outbound, returned))
-    if phase=="OUT" and outbound>=distance then phase="RETURN" end
+        outbound=math.max(0, math.min(distance, outbound))
+        returned=math.max(0, math.min(outbound, returned))
+        if phase=="OUT" and outbound>=distance then phase="RETURN" end
 
-    activeJob={
-        id=tostring(job.id or ("recovered-"..Common.nowMs())),
-        type="tunnel_roundtrip",
-        phase=phase,
-        distance=distance,
-        outbound=outbound,
-        returned=returned,
-        delay=math.max(JOB_MIN_DELAY, math.min(JOB_MAX_DELAY, tonumber(job.delay) or JOB_DEFAULT_DELAY)),
-        reason=tostring(job.reason or ""),
-        startHeading=math.floor(tonumber(saved.startHeading) or config.heading)%4,
-        recoveries=math.floor(tonumber(job.recoveries) or 0)+1,
-        initialDelay=0.1+(os.getComputerID()%24)*JOB_START_STAGGER,
-    }
+        activeJob={
+            id=tostring(job.id or ("recovered-"..Common.nowMs())),
+            type="tunnel_roundtrip",
+            phase=phase,
+            distance=distance,
+            outbound=outbound,
+            returned=returned,
+            delay=math.max(JOB_MIN_DELAY, math.min(JOB_MAX_DELAY, tonumber(job.delay) or JOB_DEFAULT_DELAY)),
+            reason=tostring(job.reason or ""),
+            startHeading=math.floor(tonumber(saved.startHeading) or config.heading)%4,
+            recoveries=math.floor(tonumber(job.recoveries) or 0)+1,
+            initialDelay=0.1+(os.getComputerID()%24)*JOB_START_STAGGER,
+        }
+    elseif job.type==Industrial.TYPE_EXCAVATE then
+        local plan,planErr=Industrial.plan({
+            type=Industrial.TYPE_EXCAVATE,
+            width=job.width,length=job.length,height=job.height or job.layers,
+            stepDelay=job.delay,
+        })
+        if not plan then return false,tostring(planErr) end
+        if type(job.origin)~="table" then return false,"box_origin_missing" end
+
+        local phase=tostring(job.phase or "")
+        if phase~="WORK" and phase~="RETURN" then return false,"box_phase" end
+        local completed=math.max(0,math.min(plan.volume,math.floor(tonumber(job.completed) or 0)))
+        local cursor=math.max(0,math.min(completed,math.floor(tonumber(job.cursor) or completed)))
+        local returned=math.max(0,math.floor(tonumber(job.returned) or 0))
+        if phase=="WORK" then cursor=completed end
+        if phase=="WORK" and completed>=plan.volume then phase="RETURN" end
+
+        activeJob={
+            id=tostring(job.id or ("recovered-box-"..Common.nowMs())),
+            type=Industrial.TYPE_EXCAVATE,
+            phase=phase,
+            width=plan.spec.width,length=plan.spec.length,height=plan.spec.height,layers=plan.spec.layers,
+            volume=plan.volume,completed=completed,cursor=cursor,returned=returned,
+            delay=plan.spec.stepDelay,
+            reason=tostring(job.reason or ""),
+            startHeading=math.floor(tonumber(saved.startHeading) or tonumber(job.origin.heading) or config.heading)%4,
+            origin={
+                x=tonumber(job.origin.x) or 0,y=tonumber(job.origin.y) or 0,z=tonumber(job.origin.z) or 0,
+                heading=math.floor(tonumber(job.origin.heading) or tonumber(saved.startHeading) or config.heading)%4,
+                frame=tostring(job.origin.frame or navPosition.frame),
+            },
+            fuelRequired=plan.fuelRequired,
+            inventoryFree=tonumber(job.inventoryFree),
+            inventoryPressure=tonumber(job.inventoryPressure),
+            recoveries=math.floor(tonumber(job.recoveries) or 0)+1,
+            initialDelay=0.1+(os.getComputerID()%24)*JOB_START_STAGGER,
+        }
+    else
+        return false
+    end
 
     if type(saved.nav)=="table" then
         navPosition={
@@ -709,6 +1004,8 @@ local function perform(command, args, requestId)
         ok,err=move("forward")
     elseif command=="job_tunnel_roundtrip" then
         return startTunnelJob(args, requestId)
+    elseif command=="job_excavate_box" then
+        return startBoxJob(args, requestId)
     elseif command=="job_cancel" then
         return requestJobReturn("OPERATOR_ABORT")
     elseif command=="rtb" then
@@ -841,20 +1138,28 @@ local function draw()
 
     local fuel=select(1,fuelSnapshot())
     local caps=capabilitySnapshot()
+    local jobLine="Job: none"
+    if activeJob then
+        local current,total
+        if activeJob.type==Industrial.TYPE_EXCAVATE then
+            if activeJob.phase=="WORK" then
+                current=activeJob.completed or 0; total=activeJob.volume or 0
+            else
+                current=activeJob.returned or 0; total=activeJob.completed or 0
+            end
+        else
+            current=activeJob.phase=="OUT" and activeJob.outbound or activeJob.returned
+            total=activeJob.phase=="OUT" and activeJob.distance or activeJob.outbound
+        end
+        jobLine=string.format("Job %s %s %d/%d R:%d",activeJob.type,activeJob.phase,current or 0,total or 0,activeJob.recoveries or 0)
+    end
     local lines={
         config.name.." #"..os.getComputerID(),
         "State: "..state.." Link:"..currentLinkState(),
         string.format("NAV %.0f %.0f %.0f H:%s",navPosition.x,navPosition.y,navPosition.z,HEADING_NAMES[config.heading]),
         "Fuel: "..tostring(fuel or "?"),
         string.format("A%s D%s JOB%s R%s",caps.melee and "+" or "-",caps.dig and "+" or "-",caps.jobs and "+" or "-",caps.relay and "+" or "-"),
-        activeJob and string.format(
-            "Job %s %s %d/%d R:%d",
-            activeJob.type,
-            activeJob.phase,
-            activeJob.phase=="OUT" and activeJob.outbound or activeJob.returned,
-            activeJob.phase=="OUT" and activeJob.distance or activeJob.outbound,
-            activeJob.recoveries or 0
-        ) or "Job: none",
+        jobLine,
         config.homeNav and string.format("Home %.0f %.0f %.0f",config.homeNav.x,config.homeNav.y,config.homeNav.z) or "Home: not set",
         "v"..VERSION.." Fleet:"..config.fleetId,
     }
